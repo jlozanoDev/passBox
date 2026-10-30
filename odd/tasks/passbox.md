@@ -117,8 +117,8 @@ Acceptance: work proceeds in this order; each phase's artifacts are delivered an
 | --- | ----------------------------- | ------ | ------- | ----------------- |
 | T1  | S11, S12                      | inline | done    | 9b041a7           |
 | T2  | S12 (Fase 1), S4 (UI surface) | inline | pending | —                 |
-| T3  | S6, S7, S10                   | inline | done    | (commit below)    |
-| T4  | S1, S2, S9, S10               | inline | pending | —                 |
+| T3  | S6, S7, S10                   | inline | done    | 3818cd9           |
+| T4 | S1, S2, S9, S10 | inline | done | (this commit) |
 | T5  | S5                            | inline | pending | —                 |
 | T6  | S8, S3 (upload/download)      | inline | pending | —                 |
 | T7  | S4, S3 (auto-sync)            | inline | pending | —                 |

@@ -30,6 +30,47 @@ export function deriveKey(masterPassword, salt) {
 }
 
 /**
+ * Encrypt a payload with an already-derived key (session save path).
+ * @param {object} payload
+ * @param {Buffer} key 32-byte key
+ * @param {Buffer} salt 16-byte vault salt ( travels in the envelope, public by design )
+ * @returns {{salt: string, iv: string, authTag: string, ciphertext: string}}
+ */
+export function encryptWithKey(payload, key, salt) {
+  const iv = randomBytes(IV_BYTES);
+  const cipher = createCipheriv(ALGORITHM, key, iv);
+  const plaintext = Buffer.from(JSON.stringify(payload), 'utf8');
+  const ciphertext = Buffer.concat([cipher.update(plaintext), cipher.final()]);
+
+  return {
+    salt: salt.toString('base64'),
+    iv: iv.toString('base64'),
+    authTag: cipher.getAuthTag().toString('base64'),
+    ciphertext: ciphertext.toString('base64'),
+  };
+}
+
+/**
+ * Decrypt an envelope with an already-derived key (session path).
+ * @param {{salt: string, iv: string, authTag: string, ciphertext: string}} envelope
+ * @param {Buffer} key 32-byte key
+ * @returns {object} plaintext JSON
+ */
+export function decryptWithKey(envelope, key) {
+  const decipher = createDecipheriv(
+    ALGORITHM,
+    key,
+    Buffer.from(envelope.iv, 'base64'),
+  );
+  decipher.setAuthTag(Buffer.from(envelope.authTag, 'base64'));
+  const plaintext = Buffer.concat([
+    decipher.update(Buffer.from(envelope.ciphertext, 'base64')),
+    decipher.final(),
+  ]);
+  return JSON.parse(plaintext.toString('utf8'));
+}
+
+/**
  * Encrypt a vault payload into the on-disk/network envelope.
  * The salt travels in the envelope (public by design) because key
  * derivation must run before decryption (see feature doc S10).
@@ -41,22 +82,8 @@ export function deriveKey(masterPassword, salt) {
 export function createVault(payload, masterPassword) {
   const salt = randomBytes(SALT_BYTES);
   const key = deriveKey(masterPassword, salt);
-  const iv = randomBytes(IV_BYTES);
-
   try {
-    const cipher = createCipheriv(ALGORITHM, key, iv);
-    const plaintext = Buffer.from(JSON.stringify(payload), 'utf8');
-    const ciphertext = Buffer.concat([
-      cipher.update(plaintext),
-      cipher.final(),
-    ]);
-
-    return {
-      salt: salt.toString('base64'),
-      iv: iv.toString('base64'),
-      authTag: cipher.getAuthTag().toString('base64'),
-      ciphertext: ciphertext.toString('base64'),
-    };
+    return encryptWithKey(payload, key, salt);
   } finally {
     key.fill(0);
   }
@@ -73,20 +100,8 @@ export function createVault(payload, masterPassword) {
 export function openVault(envelope, masterPassword) {
   const salt = Buffer.from(envelope.salt, 'base64');
   const key = deriveKey(masterPassword, salt);
-
   try {
-    const decipher = createDecipheriv(
-      ALGORITHM,
-      key,
-      Buffer.from(envelope.iv, 'base64'),
-    );
-    decipher.setAuthTag(Buffer.from(envelope.authTag, 'base64'));
-    const plaintext = Buffer.concat([
-      decipher.update(Buffer.from(envelope.ciphertext, 'base64')),
-      decipher.final(),
-    ]);
-
-    return JSON.parse(plaintext.toString('utf8'));
+    return decryptWithKey(envelope, key);
   } finally {
     key.fill(0);
   }
