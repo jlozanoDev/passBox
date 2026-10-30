@@ -11,4 +11,9 @@ contextBridge.exposeInMainWorld('passbox', {
     ipcRenderer.invoke('vault:unlock', masterPassword),
   vaultSave: (payload) => ipcRenderer.invoke('vault:save', payload),
   vaultLock: () => ipcRenderer.invoke('vault:lock'),
+  driveStatus: () => ipcRenderer.invoke('drive:status'),
+  driveSetCredentials: (credentials) =>
+    ipcRenderer.invoke('drive:set-credentials', credentials),
+  driveConnect: () => ipcRenderer.invoke('drive:connect'),
+  driveDisconnect: () => ipcRenderer.invoke('drive:disconnect'),
 });

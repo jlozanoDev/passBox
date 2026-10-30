@@ -1,7 +1,9 @@
-import { app, BrowserWindow, ipcMain } from 'electron';
+import { app, BrowserWindow, ipcMain, shell } from 'electron';
 import path from 'node:path';
 import started from 'electron-squirrel-startup';
 import { createVaultStore } from './main/vault-store.js';
+import { createDriveConfig } from './main/drive-config.js';
+import { createDriveService } from './main/drive-service.js';
 
 // Handle creating/removing shortcuts on Windows when installing/uninstalling.
 if (started) {
@@ -10,6 +12,8 @@ if (started) {
 
 /** @type {ReturnType<typeof createVaultStore>|null} */
 let vaultStore = null;
+/** @type {ReturnType<typeof createDriveService>|null} */
+let driveService = null;
 
 const createWindow = () => {
   const mainWindow = new BrowserWindow({
@@ -48,8 +52,26 @@ ipcMain.handle('vault:lock', () => {
   vaultStore.lock();
 });
 
+// Drive connection surface (S5): BYO credentials + loopback OAuth.
+ipcMain.handle('drive:status', () => driveService.status());
+
+ipcMain.handle('drive:set-credentials', (_event, credentials) =>
+  driveService.setCredentials(credentials),
+);
+
+ipcMain.handle('drive:connect', () => driveService.connect());
+
+ipcMain.handle('drive:disconnect', () => {
+  driveService.disconnect();
+});
+
 app.whenReady().then(() => {
   vaultStore = createVaultStore(app.getPath('userData'));
+  driveService = createDriveService(
+    createDriveConfig(app.getPath('userData')),
+    vaultStore,
+    (url) => shell.openExternal(url),
+  );
   createWindow();
 
   app.on('activate', () => {

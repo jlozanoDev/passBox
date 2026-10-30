@@ -37,7 +37,9 @@ Acceptance: create, list, edit and delete entries with the fields Título, Usuar
 
 > "Flujo de autenticación OAuth 2.0 seguro para vincular la cuenta de Google del usuario mediante un servidor loopback local."
 
-Acceptance: OAuth 2.0 flow links the user's Google account via a local loopback server; no embedded credentials in the client.
+Amended by user (Log L5): **bring-your-own credentials**. On first Drive connection the app prompts the user to paste their own Google OAuth Client ID + Client Secret (Google Cloud Console → Credentials → OAuth client ID type _Desktop app_). The app never ships developer credentials.
+
+Acceptance: OAuth 2.0 flow links the user's Google account via a local loopback server (`127.0.0.1`, any port); credentials are entered by the user in-app on first connect and stored via `electron-store`; scope is limited to `drive.appdata` (RNF-03); the refresh token is encrypted with the vault session key before persistence; `state` is validated on callback.
 
 ### S6 — Confidentiality (RNF-01)
 
@@ -113,17 +115,17 @@ Acceptance: work proceeds in this order; each phase's artifacts are delivered an
 
 ## Tasks
 
-| ID  | Spec                          | Route  | Status  | Commit / evidence |
-| --- | ----------------------------- | ------ | ------- | ----------------- |
-| T1  | S11, S12                      | inline | done    | 9b041a7           |
-| T2 | S12 (Fase 1), S4 (UI surface) | inline | done | 3bb5721 |
-| T3  | S6, S7, S10                   | inline | done    | 3818cd9           |
-| T4 | S1, S2, S9, S10 | inline | done | 5851671 (+fix 8c09012) |
-| T5  | S5                            | inline | pending | —                 |
-| T6  | S8, S3 (upload/download)      | inline | pending | —                 |
-| T7  | S4, S3 (auto-sync)            | inline | pending | —                 |
-| T8  | S3 (conflicts by `updatedAt`) | inline | pending | —                 |
-| T9  | S12 (Fase 4 packaging)        | inline | pending | —                 |
+| ID  | Spec                          | Route  | Status  | Commit / evidence      |
+| --- | ----------------------------- | ------ | ------- | ---------------------- |
+| T1  | S11, S12                      | inline | done    | 9b041a7                |
+| T2  | S12 (Fase 1), S4 (UI surface) | inline | done    | 3bb5721                |
+| T3  | S6, S7, S10                   | inline | done    | 3818cd9                |
+| T4  | S1, S2, S9, S10               | inline | done    | 5851671 (+fix 8c09012) |
+| T5 | S5 | inline | done | (this commit) |
+| T6  | S8, S3 (upload/download)      | inline | pending | —                      |
+| T7  | S4, S3 (auto-sync)            | inline | pending | —                      |
+| T8  | S3 (conflicts by `updatedAt`) | inline | pending | —                      |
+| T9  | S12 (Fase 4 packaging)        | inline | pending | —                      |
 
 Notes on routes: all tasks are currently planned inline (small-to-medium understood changes in a greenfield repo; no writer trigger — no parallel independent units launched together and no context backstop reached). Re-evaluate if a task grows past the inline budget.
 
@@ -187,3 +189,6 @@ Notes on routes: all tasks are currently planned inline (small-to-medium underst
 - L3 (dev, 2026-10-30) — crypto decision: PBKDF2 iterations set to **600,000** (spec mandates a minimum of 100,000; 600k follows current OWASP guidance for PBKDF2-SHA256 and still satisfies RNF-02). Vitest added as the unit test runner; T3 tests observed RED (missing module) → GREEN (6/6 pass).
 
 - L4 (dev, 2026-10-30) — Fase 1 + Fase 2 complete: scaffold (9b041a7), UI base (3bb5721), crypto engine (3818cd9), vault session (5851671), startup import fix (8c09012). 13/13 vitest tests green; `npm start` launches Electron successfully. Next: T5 OAuth loopback — blocked on user creating an OAuth Client ID in Google Cloud Console (RF-05 / S5).
+
+- L5 (user, 2026-10-30) — correction, verbatim: "no lo que tienes que pedirmelas la primera vez para conectarse, no que tu las tengas"
+  Effect: T5 uses **bring-your-own OAuth credentials** — the app asks the user for their own Client ID/Secret on first Drive connection instead of shipping developer credentials. S5 amended accordingly; T5 unblocked.

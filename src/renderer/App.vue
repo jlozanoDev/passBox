@@ -4,6 +4,7 @@ import SearchBar from './components/SearchBar.vue';
 import SecretList from './components/SecretList.vue';
 import SecretModal from './components/SecretModal.vue';
 import UnlockScreen from './components/UnlockScreen.vue';
+import DriveSettings from './components/DriveSettings.vue';
 
 const ready = ref(false);
 const unlocked = ref(false);
@@ -153,5 +154,9 @@ async function lock() {
       @save="saveItem"
       @cancel="modalOpen = false"
     />
+
+    <aside class="mt-6">
+      <DriveSettings />
+    </aside>
   </div>
 </template>

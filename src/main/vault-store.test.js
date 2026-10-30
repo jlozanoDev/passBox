@@ -92,4 +92,24 @@ describe('vault-store', () => {
     writeFileSync(vaultPath, 'not-json');
     expect(() => store.unlock('master-password')).toThrow();
   });
+
+  it('encrypts and decrypts auxiliary blobs with the session key (S5 token)', () => {
+    store.create('master-password');
+    const blob = store.encryptSessionData({ refreshToken: 'refresh-token-1' });
+
+    expect(blob).toHaveProperty('iv');
+    expect(blob).toHaveProperty('authTag');
+    expect(blob).toHaveProperty('ciphertext');
+    expect(JSON.stringify(blob)).not.toContain('refresh-token-1');
+
+    const opened = store.decryptSessionData(blob);
+    expect(opened).toEqual({ refreshToken: 'refresh-token-1' });
+  });
+
+  it('refuses session-blob crypto while locked', () => {
+    expect(() => store.encryptSessionData({ a: 1 })).toThrow();
+    expect(() =>
+      store.decryptSessionData({ iv: 'x', authTag: 'y', ciphertext: 'z' }),
+    ).toThrow();
+  });
 });

@@ -47,13 +47,9 @@ export function createVaultStore(baseDir) {
         updatedAt: new Date().toISOString(),
         items: [],
       };
-      const envelope = encryptWithKey(
-        payload,
-        deriveKey(masterPassword, salt),
-        salt,
-      );
-      writeFileSync(vaultPath, JSON.stringify(envelope), 'utf8');
       sessionKey = deriveKey(masterPassword, salt);
+      const envelope = encryptWithKey(payload, sessionKey, salt);
+      writeFileSync(vaultPath, JSON.stringify(envelope), 'utf8');
       return payload;
     },
 
@@ -66,15 +62,18 @@ export function createVaultStore(baseDir) {
         throw new Error('Vault does not exist');
       }
       const envelope = JSON.parse(readFileSync(vaultPath, 'utf8'));
-      const payload = decryptWithKey(
-        envelope,
-        deriveKey(masterPassword, Buffer.from(envelope.salt, 'base64')),
-      );
-      sessionKey = deriveKey(
-        masterPassword,
-        Buffer.from(envelope.salt, 'base64'),
-      );
-      return payload;
+      const salt = Buffer.from(envelope.salt, 'base64');
+      const derived = deriveKey(masterPassword, salt);
+      try {
+        const payload = decryptWithKey(envelope, derived);
+        // Transfer ownership to the session: keep the derived key for
+        // saves without paying PBKDF2 twice.
+        sessionKey = derived;
+        return payload;
+      } catch (err) {
+        derived.fill(0);
+        throw err;
+      }
     },
 
     /**
@@ -104,6 +103,30 @@ export function createVaultStore(baseDir) {
         sessionKey.fill(0);
         sessionKey = null;
       }
+    },
+
+    /**
+     * Encrypt an auxiliary secret (e.g. the Drive refresh token) with
+     * the session key so it reaches disk only as ciphertext (S5).
+     * @param {object} data
+     * @returns {{iv: string, authTag: string, ciphertext: string}}
+     */
+    encryptSessionData(data) {
+      requireUnlocked();
+      // Fresh random salt+IV per blob: the salt field in the envelope
+      // is not used for derivation here, it only keeps the envelope
+      // shape consistent; confidentiality comes from the session key.
+      return encryptWithKey(data, sessionKey, randomBytes(SALT_BYTES));
+    },
+
+    /**
+     * Decrypt an auxiliary secret encrypted with the session key.
+     * @param {{iv: string, authTag: string, ciphertext: string}} blob
+     * @returns {object}
+     */
+    decryptSessionData(blob) {
+      requireUnlocked();
+      return decryptWithKey(blob, sessionKey);
     },
   };
 }
