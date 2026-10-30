@@ -17,7 +17,8 @@
     "make": "electron-forge make",
     "release": "electron-forge release",
     "lint": "oxlint && oxfmt --check",
-    "lint:fix": "oxlint --fix && oxfmt --write"
+    "lint:fix": "oxlint --fix && oxfmt --write",
+    "test": "vitest run"
   },
   "devDependencies": {
     "@electron-forge/cli": "^8.0.1",
@@ -35,7 +36,8 @@
     "oxfmt": "^0.75.0",
     "oxlint": "^1.90.0",
     "tailwindcss": "^4.3.3",
-    "vite": "^8.3.5"
+    "vite": "^8.3.5",
+    "vitest": "^5.0.5"
   },
   "dependencies": {
     "electron-squirrel-startup": "^1.0.1",

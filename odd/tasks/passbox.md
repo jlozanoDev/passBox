@@ -117,7 +117,7 @@ Acceptance: work proceeds in this order; each phase's artifacts are delivered an
 | --- | ----------------------------- | ------ | ------- | ----------------- |
 | T1  | S11, S12                      | inline | done    | 9b041a7           |
 | T2  | S12 (Fase 1), S4 (UI surface) | inline | pending | —                 |
-| T3  | S6, S7, S10                   | inline | pending | —                 |
+| T3  | S6, S7, S10                   | inline | done    | (commit below)    |
 | T4  | S1, S2, S9, S10               | inline | pending | —                 |
 | T5  | S5                            | inline | pending | —                 |
 | T6  | S8, S3 (upload/download)      | inline | pending | —                 |
@@ -183,3 +183,5 @@ Notes on routes: all tasks are currently planned inline (small-to-medium underst
 
 - L2 (user, 2026-10-30) — correction, verbatim: "un cambio importante, en vez de reac, tiene que ser en vue"
   Effect: frontend framework changes from React to **Vue 3**. Affects S11 (stack) and S12 (Fase 1 scaffold). Everything else unchanged (Electron, Vite, Electron Forge, Tailwind CSS, Node crypto, googleapis, electron-store).
+
+- L3 (dev, 2026-10-30) — crypto decision: PBKDF2 iterations set to **600,000** (spec mandates a minimum of 100,000; 600k follows current OWASP guidance for PBKDF2-SHA256 and still satisfies RNF-02). Vitest added as the unit test runner; T3 tests observed RED (missing module) → GREEN (6/6 pass).
