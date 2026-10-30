@@ -115,7 +115,7 @@ Acceptance: work proceeds in this order; each phase's artifacts are delivered an
 
 | ID  | Spec                          | Route  | Status  | Commit / evidence |
 | --- | ----------------------------- | ------ | ------- | ----------------- |
-| T1  | S11, S12                      | inline | pending | —                 |
+| T1  | S11, S12                      | inline | done    | 9b041a7           |
 | T2  | S12 (Fase 1), S4 (UI surface) | inline | pending | —                 |
 | T3  | S6, S7, S10                   | inline | pending | —                 |
 | T4  | S1, S2, S9, S10               | inline | pending | —                 |
