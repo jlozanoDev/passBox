@@ -172,15 +172,36 @@ export function createVaultStore(baseDir) {
     },
 
     /**
-     * Adopt a remote vault envelope from another device: verify the
-     * master password against the envelope's own salt (zero-knowledge —
-     * nothing is stored), swap the session key on success, persist the
-     * envelope. On failure nothing changes: same session, same file.
+     * Preview a remote vault from another device: verify the master
+     * password against the envelope's own salt and decrypt WITHOUT
+     * persisting or touching the session — sync compares recency
+     * against this payload before ever adopting (verifier B1).
      * @param {{salt: string, iv: string, authTag: string, ciphertext: string}} envelope
      * @param {string} masterPassword
      * @returns {object} decrypted remote payload
      */
-    rekey(envelope, masterPassword) {
+    previewRemoteWithPassword(envelope, masterPassword) {
+      const derived = deriveKey(
+        masterPassword,
+        Buffer.from(envelope.salt, 'base64'),
+      );
+      try {
+        return decryptWithKey(envelope, derived);
+      } finally {
+        derived.fill(0);
+      }
+    },
+
+    /**
+     * Adopt a remote vault envelope from another device: verify the
+     * password, persist the envelope atomically FIRST, and only then
+     * swap the session key — a failed write must leave the session
+     * matching the file on disk (verifier B2).
+     * @param {{salt: string, iv: string, authTag: string, ciphertext: string}} envelope
+     * @param {string} masterPassword
+     * @returns {object} decrypted remote payload
+     */
+    adoptRemote(envelope, masterPassword) {
       const derived = deriveKey(
         masterPassword,
         Buffer.from(envelope.salt, 'base64'),
@@ -192,11 +213,16 @@ export function createVaultStore(baseDir) {
         derived.fill(0);
         throw err;
       }
+      try {
+        writeEnvelopeAtomic(envelope);
+      } catch (err) {
+        derived.fill(0);
+        throw err;
+      }
       if (sessionKey) {
         sessionKey.fill(0);
       }
       sessionKey = derived;
-      writeEnvelopeAtomic(envelope);
       return payload;
     },
   };

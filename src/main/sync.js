@@ -12,36 +12,124 @@
  * under zero-knowledge constraints.
  */
 
-export function createSyncService({ vaultStore, driveFiles, config }) {
+/** Cloud operations during open/save must never hang the session. */
+export const SYNC_TIMEOUT_MS = 15_000;
+
+function withTimeout(promise, ms = SYNC_TIMEOUT_MS) {
+  return new Promise((resolve, reject) => {
+    const timer = setTimeout(() => reject(new Error('sync timed out')), ms);
+    promise.then(
+      (value) => {
+        clearTimeout(timer);
+        resolve(value);
+      },
+      (err) => {
+        clearTimeout(timer);
+        reject(err);
+      },
+    );
+  });
+}
+
+export function createSyncService({
+  vaultStore,
+  driveFiles,
+  config,
+  timeoutMs = SYNC_TIMEOUT_MS,
+}) {
   /** @type {'unverified'|'verified'|'blocked'} session lineage state */
   let lineage = 'unverified';
 
-  function connected() {
-    return Boolean(config.getStatus().connected);
+  const connected = () => Boolean(config.getStatus().connected);
+
+  /** The config store itself may be broken — sync must shrug it off. */
+  const record = (ok, error) => {
+    try {
+      if (error === undefined) {
+        config.recordSync(ok);
+      } else {
+        config.recordSync(ok, error);
+      }
+    } catch {
+      // best effort: last-sync state is diagnostics only
+    }
+  };
+
+  const net = (promise) => withTimeout(promise, timeoutMs);
+
+  /**
+   * Adopt a foreign-lineage (different-salt) remote only when it is
+   * genuinely newer, carrying the Drive token across the session-key
+   * swap (verifier B1/B3).
+   */
+  function adoptIfNewer(remote, localPayload, masterPassword) {
+    let preview;
+    try {
+      preview = vaultStore.previewRemoteWithPassword(remote, masterPassword);
+    } catch {
+      lineage = 'blocked';
+      record(false, 'incompatible-vault');
+      return { payload: localPayload, action: 'incompatible' };
+    }
+
+    if (!(preview.updatedAt > localPayload.updatedAt)) {
+      // An independent vault that is not newer: adopting it would
+      // destroy local-only secrets; pushing would destroy theirs.
+      lineage = 'blocked';
+      record(false, 'incompatible-vault');
+      return { payload: localPayload, action: 'incompatible' };
+    }
+
+    try {
+      // The token blob is encrypted with the OLD session key: decrypt
+      // it before the swap and re-encrypt after, or every adoption
+      // would silently orphan the Drive session (verifier B3).
+      const blob = config.getTokenBlob ? config.getTokenBlob() : null;
+      let tokenData = null;
+      if (blob) {
+        try {
+          tokenData = vaultStore.decryptSessionData(blob);
+        } catch {
+          // already unreadable — user reconnects Drive if needed
+        }
+      }
+      const adopted = vaultStore.adoptRemote(remote, masterPassword);
+      if (tokenData) {
+        config.setTokenBlob(vaultStore.encryptSessionData(tokenData));
+      }
+      lineage = 'verified';
+      record(true);
+      return { payload: adopted, action: 'pulled' };
+    } catch {
+      lineage = 'blocked';
+      record(false, 'incompatible-vault');
+      return { payload: localPayload, action: 'incompatible' };
+    }
   }
 
   return {
     /**
      * Run the on-open cloud check (RF-03) with the freshly unlocked
-     * local payload.
+     * local payload. Never throws — a broken cloud must not block
+     * unlock (verifier A1/A2).
      * @param {object} localPayload plaintext vault payload
      * @param {string} masterPassword needed only to adopt a remote
      *   vault created on another device with the same password
-     * @returns {Promise<{payload: object, action: string}>}
+     * @returns {Promise<{payload: object, action: string, error?: string}>}
      */
     async open(localPayload, masterPassword) {
-      if (!connected()) {
-        return { payload: localPayload, action: 'skipped' };
-      }
-
       try {
-        const remote = await driveFiles.download();
+        if (!connected()) {
+          return { payload: localPayload, action: 'skipped' };
+        }
+
+        const remote = await net(driveFiles.download());
 
         if (!remote) {
           // First sync: seed the cloud with the current vault.
-          await driveFiles.upload(vaultStore.readEnvelope());
+          await net(driveFiles.upload(vaultStore.readEnvelope()));
           lineage = 'verified';
-          config.recordSync(true);
+          record(true);
           return { payload: localPayload, action: 'seeded' };
         }
 
@@ -49,39 +137,35 @@ export function createSyncService({ vaultStore, driveFiles, config }) {
         try {
           remotePayload = vaultStore.decryptWithSession(remote);
         } catch {
-          // Different salt: another device's vault. Same master
-          // password adopts it; a different one is refused outright.
-          try {
-            remotePayload = vaultStore.rekey(remote, masterPassword);
-          } catch {
-            lineage = 'blocked';
-            return { payload: localPayload, action: 'incompatible' };
-          }
-          lineage = 'verified';
-          config.recordSync(true);
-          return { payload: remotePayload, action: 'pulled' };
+          // Different salt: another device's vault lineage.
+          return adoptIfNewer(remote, localPayload, masterPassword);
         }
 
         if (remotePayload.updatedAt > localPayload.updatedAt) {
           vaultStore.replaceEnvelope(remote);
           lineage = 'verified';
-          config.recordSync(true);
+          record(true);
           return { payload: remotePayload, action: 'pulled' };
         }
 
         if (localPayload.updatedAt > remotePayload.updatedAt) {
-          await driveFiles.upload(vaultStore.readEnvelope());
+          await net(driveFiles.upload(vaultStore.readEnvelope()));
           lineage = 'verified';
-          config.recordSync(true);
+          record(true);
           return { payload: localPayload, action: 'pushed' };
         }
 
         lineage = 'verified';
+        record(true);
         return { payload: localPayload, action: 'uptodate' };
       } catch (err) {
         // Local-first: a failed check must never block the session.
-        config.recordSync(false, err.message);
-        return { payload: localPayload, action: 'offline', error: err.message };
+        record(false, err.message);
+        return {
+          payload: localPayload,
+          action: 'offline',
+          error: err.message,
+        };
       }
     },
 
@@ -94,32 +178,36 @@ export function createSyncService({ vaultStore, driveFiles, config }) {
      * @returns {Promise<{uploaded: boolean, reason?: string}>}
      */
     async uploadAfterSave(localPayload) {
-      if (!connected()) {
-        return { uploaded: false, reason: 'not-connected' };
-      }
-      if (lineage !== 'verified') {
-        return { uploaded: false, reason: 'lineage-unverified' };
-      }
-
       try {
-        const remote = await driveFiles.download();
+        if (!connected()) {
+          return { uploaded: false, reason: 'not-connected' };
+        }
+        if (lineage !== 'verified') {
+          record(false, 'lineage-unverified');
+          return { uploaded: false, reason: 'lineage-unverified' };
+        }
+
+        const remote = await net(driveFiles.download());
         if (remote) {
           let remotePayload;
           try {
             remotePayload = vaultStore.decryptWithSession(remote);
           } catch {
             lineage = 'blocked';
+            record(false, 'lineage-changed');
             return { uploaded: false, reason: 'lineage-changed' };
           }
           if (remotePayload.updatedAt > localPayload.updatedAt) {
+            record(false, 'remote-newer');
             return { uploaded: false, reason: 'remote-newer' };
           }
         }
-        await driveFiles.upload(vaultStore.readEnvelope());
-        config.recordSync(true);
+
+        await net(driveFiles.upload(vaultStore.readEnvelope()));
+        record(true);
         return { uploaded: true };
       } catch (err) {
-        config.recordSync(false, err.message);
+        record(false, err.message);
         return { uploaded: false, reason: err.message };
       }
     },

@@ -162,7 +162,7 @@ describe('vault-store', () => {
     expect(store.unlock('master-password')).toEqual(payloadB);
   });
 
-  it('rekey swaps the session to a same-password envelope from another device', () => {
+  it('adoptRemote swaps the session to a same-password envelope from another device', () => {
     store.create('local-password');
     const remotePayload = {
       version: '1.0.0',
@@ -175,21 +175,21 @@ describe('vault-store', () => {
     // Different salt: session key from the local vault cannot read it.
     expect(() => store.decryptWithSession(remoteEnvelope)).toThrow();
 
-    const returned = store.rekey(remoteEnvelope, 'local-password');
+    const returned = store.adoptRemote(remoteEnvelope, 'local-password');
 
     expect(returned).toEqual(remotePayload);
     expect(store.decryptWithSession(remoteEnvelope)).toEqual(remotePayload);
     expect(store.readEnvelope()).toEqual(remoteEnvelope);
   });
 
-  it('rekey rejects a wrong password without corrupting the session', () => {
+  it('adoptRemote rejects a wrong password without corrupting the session', () => {
     const payload = store.create('local-password');
     const remoteEnvelope = createVault(
       { ...payload, updatedAt: '2026-01-03T00:00:00.000Z' },
       'other-password',
     );
 
-    expect(() => store.rekey(remoteEnvelope, 'wrong-password')).toThrow();
+    expect(() => store.adoptRemote(remoteEnvelope, 'wrong-password')).toThrow();
 
     // Session and file remain on the original lineage.
     expect(store.decryptWithSession(store.readEnvelope())).toEqual(payload);
