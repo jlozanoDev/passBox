@@ -115,17 +115,17 @@ Acceptance: work proceeds in this order; each phase's artifacts are delivered an
 
 ## Tasks
 
-| ID  | Spec                          | Route  | Status  | Commit / evidence      |
-| --- | ----------------------------- | ------ | ------- | ---------------------- |
-| T1  | S11, S12                      | inline | done    | 9b041a7                |
-| T2  | S12 (Fase 1), S4 (UI surface) | inline | done    | 3bb5721                |
-| T3  | S6, S7, S10                   | inline | done    | 3818cd9                |
-| T4  | S1, S2, S9, S10               | inline | done    | 5851671 (+fix 8c09012) |
-| T5  | S5                            | inline | done    | 7bef457                |
-| T6 | S8, S3 (upload/download) | inline | done | ecbcf24 (+fix 1d99142, verified) |
-| T7  | S4, S3 (auto-sync)            | inline | pending | —                      |
-| T8  | S3 (conflicts by `updatedAt`) | inline | pending | —                      |
-| T9  | S12 (Fase 4 packaging)        | inline | pending | —                      |
+| ID  | Spec                          | Route  | Status  | Commit / evidence                |
+| --- | ----------------------------- | ------ | ------- | -------------------------------- |
+| T1  | S11, S12                      | inline | done    | 9b041a7                          |
+| T2  | S12 (Fase 1), S4 (UI surface) | inline | done    | 3bb5721                          |
+| T3  | S6, S7, S10                   | inline | done    | 3818cd9                          |
+| T4  | S1, S2, S9, S10               | inline | done    | 5851671 (+fix 8c09012)           |
+| T5  | S5                            | inline | done    | 7bef457                          |
+| T6  | S8, S3 (upload/download)      | inline | done    | ecbcf24 (+fix 1d99142, verified) |
+| T7 | S4, S3 (auto-sync) | inline | done | 94c6d1a |
+| T8  | S3 (conflicts by `updatedAt`) | inline | pending | —                                |
+| T9  | S12 (Fase 4 packaging)        | inline | pending | —                                |
 
 Notes on routes: all tasks are currently planned inline (small-to-medium understood changes in a greenfield repo; no writer trigger — no parallel independent units launched together and no context backstop reached). Re-evaluate if a task grows past the inline budget.
 
@@ -199,3 +199,9 @@ Notes on routes: all tasks are currently planned inline (small-to-medium underst
   B1: the `drive:upload` IPC accepted whatever the renderer sent, and the renderer only holds plaintext — upload bytes now come from `vaultStore.readEnvelope()` (disk ciphertext) and `assertEnvelope` gates both directions before any Drive call.
   B2: update-404 self-heal created a duplicate `passbox.vault` instead of re-resolving by name — both upload and download now re-list by name (newest-first) after a stale id, creating only when no file with that name exists.
   Advisories fixed in the same batch: dead `getTokenData` removed; decrypt failure now clears the token and reports "reconnect Google Drive"; remote body validation (JSON + envelope shape); simplified Drive query; `createAuthClient` split out and unit-tested (44/44); lint gate red since T5 row now green; L6 hash typo corrected. Verifier scratch dirs cleaned.
+
+- L8 (dev, 2026-10-31) — T7 design decisions (auto-sync):
+  (a) The on-open cloud check runs right after unlock, not before the password prompt — the Drive refresh token is encrypted with the vault session key (T5 decision), so zero-knowledge forces check-after-unlock; closest point RF-03 allows.
+  (b) Multi-device bootstrap: a remote envelope with a different salt is adopted only via password rekey (derive from envelope salt + GCM verification, nothing stored); a foreign master password is refused and this session then blocks pushes (`lineage = 'blocked'`).
+  (c) Never clobber: every push pre-flights the remote (`download` + `updatedAt` compare); a newer remote mid-session defers to T8. Pushes require verified lineage this session.
+  (d) `vault:save` fires the upload fire-and-forget — sync failure can neither block nor undo a local save. Vault writes are atomic (tmp+rename). Last sync outcome lands in electron-store (S11 stack note).
