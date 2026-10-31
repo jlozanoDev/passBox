@@ -123,7 +123,7 @@ Acceptance: work proceeds in this order; each phase's artifacts are delivered an
 | T4  | S1, S2, S9, S10               | inline | done    | 5851671 (+fix 8c09012)           |
 | T5  | S5                            | inline | done    | 7bef457                          |
 | T6  | S8, S3 (upload/download)      | inline | done    | ecbcf24 (+fix 1d99142, verified) |
-| T7  | S4, S3 (auto-sync)            | inline | done    | 94c6d1a                          |
+| T7 | S4, S3 (auto-sync) | inline | done | 94c6d1a (+fix b5bf9a3, verified) |
 | T8  | S3 (conflicts by `updatedAt`) | inline | pending | —                                |
 | T9  | S12 (Fase 4 packaging)        | inline | pending | —                                |
 
@@ -205,3 +205,10 @@ Notes on routes: all tasks are currently planned inline (small-to-medium underst
   (b) Multi-device bootstrap: a remote envelope with a different salt is adopted only via password rekey (derive from envelope salt + GCM verification, nothing stored); a foreign master password is refused and this session then blocks pushes (`lineage = 'blocked'`).
   (c) Never clobber: every push pre-flights the remote (`download` + `updatedAt` compare); a newer remote mid-session defers to T8. Pushes require verified lineage this session.
   (d) `vault:save` fires the upload fire-and-forget — sync failure can neither block nor undo a local save. Vault writes are atomic (tmp+rename). Last sync outcome lands in electron-store (S11 stack note).
+
+- L9 (dev, 2026-10-31) — independent verification of T7: **FAIL → 3 blockers** (irrebuildable-data class), all fixed in one correction batch (b5bf9a3) with the verifier's probes committed as regression tests:
+  B1: foreign-lineage (different-salt) remotes were adopted without a recency check — an older remote could destroy newer local-only secrets. Fix: `previewRemoteWithPassword` decrypts without persisting; adoption happens only for a strictly newer remote, otherwise the lineage blocks.
+  B2: `adoptRemote` swapped the session key before the atomic write — a failed write could leave session≠file and the next save unreadable. Fix: persist first, swap last; failure zeroes the derived key and leaves the session untouched.
+  B3: every adoption invalidated the encrypted Drive refresh token (bound to the old session key) while the UI still showed Connected. Fix: decrypt the token blob before the swap, re-encrypt after.
+  Advisories fixed: open/uploadAfterSave never reject even when electron-store is broken (A2); 15s cloud-operation timeout so unlock can never hang on a black-holed network (A1); last-sync outcome now recorded for uptodate/incompatible/remote-newer/lineage-unverified (A3).
+  Known/deferred: pre-flight download→upload TOCTOU is inherent until T8 conflict resolution (A5); UnlockScreen mislabels non-password errors — pre-existing, UI polish (A6); `getLastSync` has no renderer consumer yet (A3) — surface planned with T8.
