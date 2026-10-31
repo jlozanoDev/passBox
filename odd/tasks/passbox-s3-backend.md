@@ -48,13 +48,13 @@ Acceptance: `DriveSettings.vue` becomes a credential form — endpoint, region, 
 
 ## Tasks
 
-| ID  | Spec   | Route  | Status  | Commit / evidence                                                                         |
-| --- | ------ | ------ | ------- | ----------------------------------------------------------------------------------------- |
-| T1  | S1, S3 | inline | done    | 93937c2 (RED→GREEN, 13 tests)                                                             |
-| T2  | S2     | inline | done    | 6f4cff1 (RED→GREEN, 6 tests)                                                              |
-| T3  | S3, S6 | inline | pending | main IPC rewire + `DriveSettings.vue` credential form + transport param rename; RED→GREEN |
-| T4  | S1, S5 | inline | pending | remove Google integration (`oauth.js`, `drive-*.js`, deps) + README                       |
-| T5  | all    | inline | pending | full suite, lint, package build gate                                                      |
+| ID  | Spec   | Route  | Status  | Commit / evidence                                                   |
+| --- | ------ | ------ | ------- | ------------------------------------------------------------------- |
+| T1  | S1, S3 | inline | done    | 93937c2 (RED→GREEN, 13 tests)                                       |
+| T2  | S2     | inline | done    | 6f4cff1 (RED→GREEN, 6 tests)                                        |
+| T3  | S3, S6 | inline | done    | 37f956e (RED→GREEN, 8 tests; suite 102/102)                         |
+| T4  | S1, S5 | inline | pending | remove Google integration (`oauth.js`, `drive-*.js`, deps) + README |
+| T5  | all    | inline | pending | full suite, lint, package build gate                                |
 
 Route evidence: units are sequential (each depends on the previous), so no parallel-writer reason; parent writes inline following this logbook.
 

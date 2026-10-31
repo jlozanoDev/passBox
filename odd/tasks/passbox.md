@@ -1,5 +1,7 @@
 # Passbox — Feature Document
 
+> **Status note (2026-10-31):** v1.0 is closed. Specs S5, S8 and the cloud-client clause of S11 below are superseded by the S3 backend feature — see `odd/tasks/passbox-s3-backend.md` (Google Drive replaced by a generic S3-compatible transport; user request: "Definitivamente lo hacemos para S3"). All other specs remain the record for v1.0 behavior.
+
 Objective: Build Passbox v1.0, a local-first, zero-knowledge Electron desktop password/secret manager that syncs an encrypted vault through the user's personal Google Drive (`appDataFolder`).
 Branch: `feature/passbox-core` (from `main`). Delivery: work-unit commits on the feature branch; push/PR remain human-owned. Test runner: `vitest` (unit) + `npm run build` (Vite/Forge type/build gate).
 
