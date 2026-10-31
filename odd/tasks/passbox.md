@@ -122,7 +122,7 @@ Acceptance: work proceeds in this order; each phase's artifacts are delivered an
 | T3  | S6, S7, S10                   | inline | done    | 3818cd9                |
 | T4  | S1, S2, S9, S10               | inline | done    | 5851671 (+fix 8c09012) |
 | T5  | S5                            | inline | done    | 7bef457                |
-| T6  | S8, S3 (upload/download)      | inline | done    | ecbcf24                |
+| T6 | S8, S3 (upload/download) | inline | done | ecbcf24 (+fix 1d99142, verified) |
 | T7  | S4, S3 (auto-sync)            | inline | pending | —                      |
 | T8  | S3 (conflicts by `updatedAt`) | inline | pending | —                      |
 | T9  | S12 (Fase 4 packaging)        | inline | pending | —                      |
