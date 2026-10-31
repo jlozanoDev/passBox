@@ -115,17 +115,17 @@ Acceptance: work proceeds in this order; each phase's artifacts are delivered an
 
 ## Tasks
 
-| ID  | Spec                          | Route  | Status  | Commit / evidence                           |
-| --- | ----------------------------- | ------ | ------- | ------------------------------------------- |
-| T1  | S11, S12                      | inline | done    | 9b041a7                                     |
-| T2  | S12 (Fase 1), S4 (UI surface) | inline | done    | 3bb5721                                     |
-| T3  | S6, S7, S10                   | inline | done    | 3818cd9                                     |
-| T4  | S1, S2, S9, S10               | inline | done    | 5851671 (+fix 8c09012)                      |
-| T5  | S5                            | inline | done    | 7bef457                                     |
-| T6  | S8, S3 (upload/download)      | inline | done    | ecbcf24 (+fix 1d99142, verified)            |
-| T7  | S4, S3 (auto-sync)            | inline | done    | 94c6d1a (+fixes b5bf9a3, 5b55bdf, verified) |
-| T8  | S3 (conflicts by `updatedAt`) | inline | done    | 9082fd5                                     |
-| T9  | S12 (Fase 4 packaging)        | inline | pending | —                                           |
+| ID  | Spec                          | Route  | Status | Commit / evidence                           |
+| --- | ----------------------------- | ------ | ------ | ------------------------------------------- |
+| T1  | S11, S12                      | inline | done   | 9b041a7                                     |
+| T2  | S12 (Fase 1), S4 (UI surface) | inline | done   | 3bb5721                                     |
+| T3  | S6, S7, S10                   | inline | done   | 3818cd9                                     |
+| T4  | S1, S2, S9, S10               | inline | done   | 5851671 (+fix 8c09012)                      |
+| T5  | S5                            | inline | done   | 7bef457                                     |
+| T6  | S8, S3 (upload/download)      | inline | done   | ecbcf24 (+fix 1d99142, verified)            |
+| T7  | S4, S3 (auto-sync)            | inline | done   | 94c6d1a (+fixes b5bf9a3, 5b55bdf, verified) |
+| T8  | S3 (conflicts by `updatedAt`) | inline | done   | 9082fd5                                     |
+| T9  | S12 (Fase 4 packaging)        | inline | done   | (docs commit; run evidence in L12)          |
 
 Notes on routes: all tasks are currently planned inline (small-to-medium understood changes in a greenfield repo; no writer trigger — no parallel independent units launched together and no context backstop reached). Re-evaluate if a task grows past the inline budget.
 
@@ -214,5 +214,7 @@ Notes on routes: all tasks are currently planned inline (small-to-medium underst
   Known/deferred: pre-flight download→upload TOCTOU is inherent until T8 conflict resolution (A5); UnlockScreen mislabels non-password errors — pre-existing, UI polish (A6); `getLastSync` has no renderer consumer yet (A3) — surface planned with T8.
 
 - L11 (dev, 2026-10-31) — T8 (conflict visibility) complete: the `updatedAt` last-writer-wins arbitration itself shipped inside T7 (Log L8); T8 adds the visible surface — new `drive:sync-status` IPC returns `{drive, lastSync}` and DriveSettings renders plain-language sync states: last-sync time when OK, amber notices for `remote-newer` (merges on reopen), `incompatible-vault`/`lineage-changed` (different master password), `lineage-unverified` (resumes after next open check), and a generic failed line otherwise. This closes advisory A3 (lastSync consumer). TOCTOU (A5) documented as accepted: pre-flight narrows the window, full closure would need Drive conditional updates — out of "basic" scope. UI copy English per artifact rules.
+
+- L12 (dev, 2026-10-31) — T9 packaging evidence: `npm run make` on **win32/x64** produced `Passbox-1.0.0 Setup.exe` (148.5 MB) + `passbox-1.0.0-full.nupkg` via MakerSquirrel; the packaged binary `out/Passbox-win32-x64/Passbox.exe` launches and stays running (observed, then terminated). Maker config from T1 already covers the other targets (MakerZIP for darwin, MakerDeb/MakerRpm for linux), but **their artifacts were not produced here** — macOS/Linux makers must run on their own hosts (CI or manual); recorded as pending-by-environment, not skipped. The installer itself was NOT executed (would install on this machine without consent — user's call). Risk for the task: none (verification activity only; forge config unchanged since T1).
 
 - L10 (dev, 2026-10-31) — second correction for the B3 residual (5b55bdf): after `adoptRemote` commits, a failed Drive-token re-wrap could return the stale local payload while disk held the adopted vault (next save → undecryptable). Fix: the token re-wrap moved out of the adoption try-block; once adoption commits every path returns the adopted payload, and a failed token write clears the Drive token so the reconnect flow surfaces. Verifier recheck: RESOLVED (R6/R7/R8), 74/74 tests, lint PASS (table alignment finally canonical). A test-side gotcha: a test helper building foreign envelopes with mismatched payload/envelope salts reproduced an unlock failure — production `vault-store.create` keeps both salts identical; the helper now mirrors that invariant.
