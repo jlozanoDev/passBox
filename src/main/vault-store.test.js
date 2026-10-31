@@ -3,6 +3,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { createVaultStore, VAULT_FILENAME } from './vault-store.js';
+import { createVault } from '../crypto/vault.js';
 
 let baseDir;
 let store;
@@ -124,5 +125,73 @@ describe('vault-store', () => {
     expect(envelope).toHaveProperty('ciphertext');
     expect(envelope).toHaveProperty('salt');
     expect(JSON.stringify(envelope)).not.toContain('master-password');
+  });
+
+  it('decryptWithSession decrypts vault envelopes with the session key', () => {
+    const payload = store.create('master-password');
+
+    expect(store.decryptWithSession(store.readEnvelope())).toEqual(payload);
+  });
+
+  it('decryptWithSession refuses while locked', () => {
+    store.create('master-password');
+    const envelope = store.readEnvelope();
+    store.lock();
+
+    expect(() => store.decryptWithSession(envelope)).toThrow(/locked/);
+  });
+
+  it('replaceEnvelope overwrites the file without leaving temp residue', async () => {
+    const { readdirSync } = await import('node:fs');
+    store.create('master-password');
+    const payloadB = {
+      version: '1.0.0',
+      salt: Buffer.from('salt-b').toString('base64'),
+      updatedAt: '2026-01-03T00:00:00.000Z',
+      items: [{ id: 'remote-1', title: 'From cloud' }],
+    };
+    const envelopeB = createVault(payloadB, 'master-password');
+
+    store.replaceEnvelope(envelopeB);
+
+    expect(store.readEnvelope()).toEqual(envelopeB);
+    expect(readdirSync(baseDir).some((f) => f.endsWith('.tmp'))).toBe(false);
+
+    // The replaced file survives a full lock/unlock cycle (S2 integrity).
+    store.lock();
+    expect(store.unlock('master-password')).toEqual(payloadB);
+  });
+
+  it('rekey swaps the session to a same-password envelope from another device', () => {
+    store.create('local-password');
+    const remotePayload = {
+      version: '1.0.0',
+      salt: Buffer.from('cmVtb3RlLXNhbHQ').toString('base64'),
+      updatedAt: '2026-01-03T00:00:00.000Z',
+      items: [{ id: 'remote-1', title: 'From cloud' }],
+    };
+    const remoteEnvelope = createVault(remotePayload, 'local-password');
+
+    // Different salt: session key from the local vault cannot read it.
+    expect(() => store.decryptWithSession(remoteEnvelope)).toThrow();
+
+    const returned = store.rekey(remoteEnvelope, 'local-password');
+
+    expect(returned).toEqual(remotePayload);
+    expect(store.decryptWithSession(remoteEnvelope)).toEqual(remotePayload);
+    expect(store.readEnvelope()).toEqual(remoteEnvelope);
+  });
+
+  it('rekey rejects a wrong password without corrupting the session', () => {
+    const payload = store.create('local-password');
+    const remoteEnvelope = createVault(
+      { ...payload, updatedAt: '2026-01-03T00:00:00.000Z' },
+      'other-password',
+    );
+
+    expect(() => store.rekey(remoteEnvelope, 'wrong-password')).toThrow();
+
+    // Session and file remain on the original lineage.
+    expect(store.decryptWithSession(store.readEnvelope())).toEqual(payload);
   });
 });

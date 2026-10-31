@@ -13,6 +13,7 @@ const KEYS = {
   clientSecret: 'google.clientSecret',
   tokenBlob: 'google.tokenBlob',
   fileId: 'google.fileId',
+  lastSync: 'sync.last',
 };
 
 /**
@@ -63,6 +64,19 @@ export function createDriveConfig(cwd) {
 
     clearFileId() {
       store.delete(KEYS.fileId);
+    },
+
+    /** Persist the last sync outcome (S11: non-sensitive sync state). */
+    recordSync(ok, error) {
+      store.set(KEYS.lastSync, {
+        at: new Date().toISOString(),
+        ok,
+        ...(error ? { error } : {}),
+      });
+    },
+
+    getLastSync() {
+      return store.get(KEYS.lastSync) ?? null;
     },
 
     getStatus() {

@@ -6,6 +6,7 @@ import { createDriveConfig } from './main/drive-config.js';
 import { createDriveService } from './main/drive-service.js';
 import { createDriveClient } from './main/drive-client.js';
 import { createDriveFiles } from './main/drive-files.js';
+import { createSyncService } from './main/sync.js';
 
 // Handle creating/removing shortcuts on Windows when installing/uninstalling.
 if (started) {
@@ -18,6 +19,8 @@ let vaultStore = null;
 let driveService = null;
 /** @type {ReturnType<typeof createDriveFiles>|null} */
 let driveFiles = null;
+/** @type {ReturnType<typeof createSyncService>|null} */
+let syncService = null;
 /** @type {ReturnType<typeof createDriveConfig>|null} */
 let driveConfig = null;
 
@@ -44,15 +47,28 @@ const createWindow = () => {
 // only in memory, never to disk or network.
 ipcMain.handle('vault:status', () => vaultStore.status());
 
-ipcMain.handle('vault:create', (_event, masterPassword) =>
-  vaultStore.create(masterPassword),
-);
+ipcMain.handle('vault:create', async (_event, masterPassword) => {
+  const payload = vaultStore.create(masterPassword);
+  // RF-03: an existing cloud vault (reinstall flow) replaces the fresh
+  // local one right after creation — same rules as unlock.
+  const { payload: fresh } = await syncService.open(payload, masterPassword);
+  return fresh;
+});
 
-ipcMain.handle('vault:unlock', (_event, masterPassword) =>
-  vaultStore.unlock(masterPassword),
-);
+ipcMain.handle('vault:unlock', async (_event, masterPassword) => {
+  const payload = vaultStore.unlock(masterPassword);
+  // RF-03: check the cloud on open and adopt a newer remote vault.
+  const { payload: fresh } = await syncService.open(payload, masterPassword);
+  return fresh;
+});
 
-ipcMain.handle('vault:save', (_event, payload) => vaultStore.save(payload));
+ipcMain.handle('vault:save', (_event, payload) => {
+  const saved = vaultStore.save(payload);
+  // RF-03: automatic upload after every mutation. Fire-and-forget: the
+  // local save must neither block on nor be undone by sync failures.
+  void syncService.uploadAfterSave(saved);
+  return saved;
+});
 
 ipcMain.handle('vault:lock', () => {
   vaultStore.lock();
@@ -89,6 +105,11 @@ app.whenReady().then(() => {
   driveFiles = createDriveFiles({
     config: driveConfig,
     createDriveClient: () => createDriveClient(driveConfig, vaultStore),
+  });
+  syncService = createSyncService({
+    vaultStore,
+    driveFiles,
+    config: driveConfig,
   });
   createWindow();
 

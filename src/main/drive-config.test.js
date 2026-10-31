@@ -91,4 +91,18 @@ describe('drive-config', () => {
     config.clearFileId();
     expect(config.getFileId()).toBeNull();
   });
+
+  it('records the last sync outcome (S11: electron-store sync state)', () => {
+    expect(config.getLastSync()).toBeNull();
+
+    config.recordSync(true);
+    const ok = config.getLastSync();
+    expect(ok.ok).toBe(true);
+    expect(typeof ok.at).toBe('string');
+
+    config.recordSync(false, 'network down');
+    const failed = config.getLastSync();
+    expect(failed.ok).toBe(false);
+    expect(failed.error).toBe('network down');
+  });
 });

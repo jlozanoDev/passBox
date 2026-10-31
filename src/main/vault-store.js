@@ -1,5 +1,5 @@
 import { randomBytes } from 'node:crypto';
-import { existsSync, readFileSync, writeFileSync } from 'node:fs';
+import { existsSync, readFileSync, renameSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import {
   decryptWithKey,
@@ -27,6 +27,13 @@ export function createVaultStore(baseDir) {
     }
   }
 
+  /** Atomic replace: write a temp file, then rename over the vault. */
+  function writeEnvelopeAtomic(envelope) {
+    const tmpPath = `${vaultPath}.tmp`;
+    writeFileSync(tmpPath, JSON.stringify(envelope), 'utf8');
+    renameSync(tmpPath, vaultPath);
+  }
+
   return {
     status() {
       return { exists: existsSync(vaultPath), unlocked: sessionKey !== null };
@@ -49,7 +56,7 @@ export function createVaultStore(baseDir) {
       };
       sessionKey = deriveKey(masterPassword, salt);
       const envelope = encryptWithKey(payload, sessionKey, salt);
-      writeFileSync(vaultPath, JSON.stringify(envelope), 'utf8');
+      writeEnvelopeAtomic(envelope);
       return payload;
     },
 
@@ -93,7 +100,7 @@ export function createVaultStore(baseDir) {
         sessionKey,
         Buffer.from(toPersist.salt, 'base64'),
       );
-      writeFileSync(vaultPath, JSON.stringify(envelope), 'utf8');
+      writeEnvelopeAtomic(envelope);
       return toPersist;
     },
 
@@ -140,6 +147,57 @@ export function createVaultStore(baseDir) {
     decryptSessionData(blob) {
       requireUnlocked();
       return decryptWithKey(blob, sessionKey);
+    },
+
+    /**
+     * Decrypt a vault envelope with the current session key — the
+     * lineage check used by sync: same salt+key succeeds, any other
+     * vault fails GCM authentication.
+     * @param {{salt: string, iv: string, authTag: string, ciphertext: string}} envelope
+     * @returns {object} plaintext payload
+     */
+    decryptWithSession(envelope) {
+      requireUnlocked();
+      return decryptWithKey(envelope, sessionKey);
+    },
+
+    /**
+     * Replace the local vault file with an envelope already verified
+     * by the caller (sync pull). Session must be unlocked.
+     * @param {{salt: string, iv: string, authTag: string, ciphertext: string}} envelope
+     */
+    replaceEnvelope(envelope) {
+      requireUnlocked();
+      writeEnvelopeAtomic(envelope);
+    },
+
+    /**
+     * Adopt a remote vault envelope from another device: verify the
+     * master password against the envelope's own salt (zero-knowledge —
+     * nothing is stored), swap the session key on success, persist the
+     * envelope. On failure nothing changes: same session, same file.
+     * @param {{salt: string, iv: string, authTag: string, ciphertext: string}} envelope
+     * @param {string} masterPassword
+     * @returns {object} decrypted remote payload
+     */
+    rekey(envelope, masterPassword) {
+      const derived = deriveKey(
+        masterPassword,
+        Buffer.from(envelope.salt, 'base64'),
+      );
+      let payload;
+      try {
+        payload = decryptWithKey(envelope, derived);
+      } catch (err) {
+        derived.fill(0);
+        throw err;
+      }
+      if (sessionKey) {
+        sessionKey.fill(0);
+      }
+      sessionKey = derived;
+      writeEnvelopeAtomic(envelope);
+      return payload;
     },
   };
 }
