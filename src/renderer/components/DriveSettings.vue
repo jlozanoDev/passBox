@@ -1,9 +1,10 @@
 <script setup>
-import { onMounted, ref } from 'vue';
+import { computed, onMounted, ref } from 'vue';
 
 const emit = defineEmits(['changed']);
 
 const status = ref({ hasCredentials: false, connected: false });
+const lastSync = ref(null);
 const clientId = ref('');
 const clientSecret = ref('');
 const busy = ref(false);
@@ -12,7 +13,37 @@ const error = ref('');
 
 async function refresh() {
   status.value = await window.passbox.driveStatus();
+  lastSync.value = (await window.passbox.driveSyncStatus()).lastSync;
 }
+
+// Map recorded sync reasons to plain-language states (T8: conflict
+// visibility — arbitration itself runs in sync.js, Log L8/L9).
+const syncState = computed(() => {
+  const entry = lastSync.value;
+  if (!entry) return null;
+  const { ok, error: reason, at } = entry;
+  const when = new Date(at).toLocaleString();
+  if (ok) return { tone: 'ok', text: `Last sync: ${when}` };
+  if (reason === 'remote-newer') {
+    return {
+      tone: 'warn',
+      text: 'Cloud has newer changes — they merge when you reopen Passbox.',
+    };
+  }
+  if (reason === 'incompatible-vault' || reason === 'lineage-changed') {
+    return {
+      tone: 'warn',
+      text: 'Sync paused: the cloud vault does not match this master password.',
+    };
+  }
+  if (reason === 'lineage-unverified') {
+    return {
+      tone: 'warn',
+      text: 'Sync resumes after the next successful check on open.',
+    };
+  }
+  return { tone: 'warn', text: `Last sync failed (${when}).` };
+});
 
 onMounted(refresh);
 
@@ -84,6 +115,14 @@ async function disconnect() {
         {{ status.connected ? 'Connected' : 'Not connected' }}
       </span>
     </div>
+
+    <p
+      v-if="status.connected && syncState"
+      class="mt-2 text-xs"
+      :class="syncState.tone === 'ok' ? 'text-neutral-500' : 'text-amber-600'"
+    >
+      {{ syncState.text }}
+    </p>
 
     <form
       v-if="!status.hasCredentials"

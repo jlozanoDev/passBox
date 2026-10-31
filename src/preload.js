@@ -18,4 +18,5 @@ contextBridge.exposeInMainWorld('passbox', {
   driveDisconnect: () => ipcRenderer.invoke('drive:disconnect'),
   driveUpload: () => ipcRenderer.invoke('drive:upload'),
   driveDownload: () => ipcRenderer.invoke('drive:download'),
+  driveSyncStatus: () => ipcRenderer.invoke('drive:sync-status'),
 });

@@ -87,6 +87,12 @@ ipcMain.handle('drive:disconnect', () => {
   driveService.disconnect();
 });
 
+// Sync/conflict surface (S3/T8): last sync outcome + deferred state.
+ipcMain.handle('drive:sync-status', () => ({
+  drive: driveService.status(),
+  lastSync: driveConfig.getLastSync(),
+}));
+
 // Vault transport (S8/S3): the envelope comes from the vault file on
 // disk in this process — the renderer never supplies upload bytes and
 // only ever receives ciphertext envelopes back.
