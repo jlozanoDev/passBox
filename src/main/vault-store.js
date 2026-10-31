@@ -97,6 +97,19 @@ export function createVaultStore(baseDir) {
       return toPersist;
     },
 
+    /**
+     * Read the raw ciphertext envelope from disk without decrypting.
+     * The upload transport takes its bytes from here — never from the
+     * renderer, which only ever holds plaintext (verifier blocker 1).
+     * @returns {{salt: string, iv: string, authTag: string, ciphertext: string}}
+     */
+    readEnvelope() {
+      if (!existsSync(vaultPath)) {
+        throw new Error('Vault does not exist');
+      }
+      return JSON.parse(readFileSync(vaultPath, 'utf8'));
+    },
+
     /** Drop and overwrite the session key (RNF-04). */
     lock() {
       if (sessionKey) {

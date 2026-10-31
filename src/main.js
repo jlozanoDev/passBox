@@ -71,9 +71,11 @@ ipcMain.handle('drive:disconnect', () => {
   driveService.disconnect();
 });
 
-// Vault transport (S8/S3): ciphertext envelopes only cross this bridge.
-ipcMain.handle('drive:upload', (_event, envelope) =>
-  driveFiles.upload(envelope),
+// Vault transport (S8/S3): the envelope comes from the vault file on
+// disk in this process — the renderer never supplies upload bytes and
+// only ever receives ciphertext envelopes back.
+ipcMain.handle('drive:upload', () =>
+  driveFiles.upload(vaultStore.readEnvelope()),
 );
 
 ipcMain.handle('drive:download', () => driveFiles.download());

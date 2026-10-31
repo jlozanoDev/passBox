@@ -63,19 +63,6 @@ export function createDriveService(config, vaultStore, openExternal) {
       }
     },
 
-    /**
-     * @returns {Promise<object>} decrypted token data for API use
-     *   (drive-service T6 consumes this; never exposed to the renderer)
-     */
-    async getTokenData() {
-      const blob = config.getTokenBlob();
-      if (!blob) return null;
-      if (!vaultStore.status().unlocked) {
-        throw new Error('Vault must be unlocked to read Drive credentials');
-      }
-      return vaultStore.decryptSessionData(blob);
-    },
-
     disconnect() {
       config.clearToken();
     },

@@ -62,6 +62,16 @@ afterEach(() => {
 });
 
 describe('drive-files upload (S8: strict appDataFolder)', () => {
+  it('rejects a malformed envelope before any Drive call (S6 gate)', async () => {
+    await expect(files.upload({ secret: 'sk_live_PLAINTEXT' })).rejects.toThrow(
+      /Invalid vault envelope/,
+    );
+    await expect(files.upload(undefined)).rejects.toThrow(
+      /Invalid vault envelope/,
+    );
+    expect(drive.calls).toHaveLength(0);
+  });
+
   it('creates passbox.vault inside appDataFolder when no remote file exists', async () => {
     const result = await files.upload(envelope);
 
@@ -123,6 +133,28 @@ describe('drive-files upload (S8: strict appDataFolder)', () => {
     expect(result).toEqual({ fileId: 'created-file-id', created: true });
     expect(config.getFileId()).toBe('created-file-id');
   });
+
+  it('re-resolves by name after an update 404 instead of forking a duplicate', async () => {
+    // Verifier blocker 2: a stale device id must converge on the file
+    // another device already recreated — never create a second one.
+    config.setFileId('stale-file-id');
+    let updates = 0;
+    drive = createMockDrive({
+      update: (params) => {
+        updates += 1;
+        if (updates === 1) throw notFoundError();
+        return { data: { id: params.fileId } };
+      },
+      list: () => ({ data: { files: [{ id: 'fresh-id' }] } }),
+    });
+    files = createDriveFiles({ config, createDriveClient: () => drive });
+
+    const result = await files.upload(envelope);
+
+    expect(result).toEqual({ fileId: 'fresh-id', created: false });
+    expect(drive.calls.map(([n]) => n)).not.toContain('create');
+    expect(config.getFileId()).toBe('fresh-id');
+  });
 });
 
 describe('drive-files download (S3: fetch cloud copy)', () => {
@@ -169,5 +201,44 @@ describe('drive-files download (S3: fetch cloud copy)', () => {
 
     expect(result).toBeNull();
     expect(config.getFileId()).toBeNull();
+  });
+
+  it('re-resolves by name after a download 404 (file recreated elsewhere)', async () => {
+    config.setFileId('stale-file-id');
+    let gets = 0;
+    drive = createMockDrive({
+      get: () => {
+        gets += 1;
+        if (gets === 1) throw notFoundError();
+        return { data: envelope };
+      },
+      list: () => ({ data: { files: [{ id: 'fresh-id' }] } }),
+    });
+    files = createDriveFiles({ config, createDriveClient: () => drive });
+
+    const result = await files.download();
+
+    expect(result).toEqual(envelope);
+    expect(config.getFileId()).toBe('fresh-id');
+  });
+
+  it('rejects a remote body that is not valid JSON', async () => {
+    config.setFileId('existing-file-id');
+    drive = createMockDrive({
+      get: () => ({ data: '{{{' }),
+    });
+    files = createDriveFiles({ config, createDriveClient: () => drive });
+
+    await expect(files.download()).rejects.toThrow(/not valid JSON/);
+  });
+
+  it('rejects a remote body that is not a vault envelope', async () => {
+    config.setFileId('existing-file-id');
+    drive = createMockDrive({
+      get: () => ({ data: { totally: 'wrong shape' } }),
+    });
+    files = createDriveFiles({ config, createDriveClient: () => drive });
+
+    await expect(files.download()).rejects.toThrow(/Invalid vault envelope/);
   });
 });

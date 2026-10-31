@@ -112,4 +112,17 @@ describe('vault-store', () => {
       store.decryptSessionData({ iv: 'x', authTag: 'y', ciphertext: 'z' }),
     ).toThrow();
   });
+
+  it('readEnvelope returns the raw ciphertext from disk, never plaintext', () => {
+    expect(() => store.readEnvelope()).toThrow();
+
+    store.create('master-password');
+    const envelope = store.readEnvelope();
+
+    expect(envelope).toHaveProperty('iv');
+    expect(envelope).toHaveProperty('authTag');
+    expect(envelope).toHaveProperty('ciphertext');
+    expect(envelope).toHaveProperty('salt');
+    expect(JSON.stringify(envelope)).not.toContain('master-password');
+  });
 });
