@@ -42,11 +42,11 @@ function makeDeps({ connected = true, remote = null, tokenBlob = null } = {}) {
       throw new Error('bad password');
     }),
   };
-  const driveFiles = {
+  const vaultFiles = {
     download: vi.fn(async () => remote),
     upload: vi.fn(async () => ({ fileId: 'f1', created: false })),
   };
-  return { config, vaultStore, driveFiles };
+  return { config, vaultStore, vaultFiles };
 }
 
 describe('syncService.open (RF-03: check cloud on open)', () => {
@@ -57,7 +57,7 @@ describe('syncService.open (RF-03: check cloud on open)', () => {
     const result = await sync.open(localPayload, 'master-pw');
 
     expect(result).toEqual({ payload: localPayload, action: 'skipped' });
-    expect(deps.driveFiles.download).not.toHaveBeenCalled();
+    expect(deps.vaultFiles.download).not.toHaveBeenCalled();
     expect(deps.vaultStore.adoptRemote).not.toHaveBeenCalled();
   });
 
@@ -69,7 +69,7 @@ describe('syncService.open (RF-03: check cloud on open)', () => {
 
     expect(result.action).toBe('seeded');
     expect(result.payload).toBe(localPayload);
-    expect(deps.driveFiles.upload).toHaveBeenCalledWith(localEnvelope);
+    expect(deps.vaultFiles.upload).toHaveBeenCalledWith(localEnvelope);
     expect(deps.config.recordSync).toHaveBeenCalledWith(true);
   });
 
@@ -90,7 +90,7 @@ describe('syncService.open (RF-03: check cloud on open)', () => {
     expect(deps.vaultStore.replaceEnvelope).toHaveBeenCalledWith(
       remoteEnvelope,
     );
-    expect(deps.driveFiles.upload).not.toHaveBeenCalled();
+    expect(deps.vaultFiles.upload).not.toHaveBeenCalled();
   });
 
   it('adopts a NEWER different-salt remote with the same password (rekey path)', async () => {
@@ -134,7 +134,7 @@ describe('syncService.open (RF-03: check cloud on open)', () => {
     expect(result.payload).toBe(localPayload);
     expect(deps.vaultStore.adoptRemote).not.toHaveBeenCalled();
     expect(deps.vaultStore.replaceEnvelope).not.toHaveBeenCalled();
-    expect(deps.driveFiles.upload).not.toHaveBeenCalled();
+    expect(deps.vaultFiles.upload).not.toHaveBeenCalled();
   });
 
   it('refuses a remote vault created with a different master password', async () => {
@@ -148,7 +148,7 @@ describe('syncService.open (RF-03: check cloud on open)', () => {
     expect(result.payload).toBe(localPayload);
     expect(deps.vaultStore.adoptRemote).not.toHaveBeenCalled();
     expect(deps.vaultStore.replaceEnvelope).not.toHaveBeenCalled();
-    expect(deps.driveFiles.upload).not.toHaveBeenCalled();
+    expect(deps.vaultFiles.upload).not.toHaveBeenCalled();
   });
 
   it('carries the Drive token across the key swap when adopting (B3)', async () => {
@@ -220,7 +220,7 @@ describe('syncService.open (RF-03: check cloud on open)', () => {
 
     expect(result.action).toBe('pushed');
     expect(result.payload).toBe(localPayload);
-    expect(deps.driveFiles.upload).toHaveBeenCalledWith(localEnvelope);
+    expect(deps.vaultFiles.upload).toHaveBeenCalledWith(localEnvelope);
   });
 
   it('does nothing when both vaults are identical in time', async () => {
@@ -231,14 +231,14 @@ describe('syncService.open (RF-03: check cloud on open)', () => {
     const result = await sync.open(localPayload, 'master-pw');
 
     expect(result.action).toBe('uptodate');
-    expect(deps.driveFiles.upload).not.toHaveBeenCalled();
+    expect(deps.vaultFiles.upload).not.toHaveBeenCalled();
     expect(deps.vaultStore.replaceEnvelope).not.toHaveBeenCalled();
     expect(deps.config.recordSync).toHaveBeenCalledWith(true);
   });
 
   it('stays local when the cloud is unreachable (local-first)', async () => {
     const deps = makeDeps();
-    deps.driveFiles.download.mockRejectedValue(new Error('network down'));
+    deps.vaultFiles.download.mockRejectedValue(new Error('network down'));
     const sync = createSyncService(deps);
 
     const result = await sync.open(localPayload, 'master-pw');
@@ -252,7 +252,7 @@ describe('syncService.open (RF-03: check cloud on open)', () => {
     vi.useFakeTimers();
     try {
       const deps = makeDeps();
-      deps.driveFiles.download.mockReturnValue(new Promise(() => {}));
+      deps.vaultFiles.download.mockReturnValue(new Promise(() => {}));
       const sync = createSyncService(deps);
 
       const pending = sync.open(localPayload, 'master-pw');
@@ -288,8 +288,8 @@ describe('syncService.uploadAfterSave (RF-03: auto upload on mutation)', () => {
     const result = await sync.uploadAfterSave(localPayload);
 
     expect(result.uploaded).toBe(false);
-    expect(deps.driveFiles.download).not.toHaveBeenCalled();
-    expect(deps.driveFiles.upload).not.toHaveBeenCalled();
+    expect(deps.vaultFiles.download).not.toHaveBeenCalled();
+    expect(deps.vaultFiles.upload).not.toHaveBeenCalled();
   });
 
   it('refuses to push before the lineage was verified in this session', async () => {
@@ -300,7 +300,7 @@ describe('syncService.uploadAfterSave (RF-03: auto upload on mutation)', () => {
 
     expect(result.uploaded).toBe(false);
     expect(result.reason).toMatch(/lineage/);
-    expect(deps.driveFiles.upload).not.toHaveBeenCalled();
+    expect(deps.vaultFiles.upload).not.toHaveBeenCalled();
   });
 
   it('skips the push when the remote grew newer mid-session (T8 resolves)', async () => {
@@ -317,7 +317,7 @@ describe('syncService.uploadAfterSave (RF-03: auto upload on mutation)', () => {
 
     expect(result.uploaded).toBe(false);
     expect(result.reason).toMatch(/remote-newer/);
-    expect(deps.driveFiles.upload).not.toHaveBeenCalled();
+    expect(deps.vaultFiles.upload).not.toHaveBeenCalled();
     expect(deps.config.recordSync).toHaveBeenCalledWith(false, 'remote-newer');
   });
 
@@ -330,7 +330,7 @@ describe('syncService.uploadAfterSave (RF-03: auto upload on mutation)', () => {
     const result = await sync.uploadAfterSave(localPayload);
 
     expect(result.uploaded).toBe(true);
-    expect(deps.driveFiles.upload).toHaveBeenCalledWith(localEnvelope);
+    expect(deps.vaultFiles.upload).toHaveBeenCalledWith(localEnvelope);
     expect(deps.config.recordSync).toHaveBeenCalledWith(true);
   });
 
@@ -339,7 +339,7 @@ describe('syncService.uploadAfterSave (RF-03: auto upload on mutation)', () => {
     deps.vaultStore.decryptWithSession.mockReturnValue(localPayload);
     const sync = createSyncService(deps);
     await sync.open(localPayload, 'master-pw');
-    deps.driveFiles.upload.mockRejectedValue(new Error('quota exceeded'));
+    deps.vaultFiles.upload.mockRejectedValue(new Error('quota exceeded'));
 
     const result = await sync.uploadAfterSave(localPayload);
 

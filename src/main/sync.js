@@ -6,10 +6,10 @@
  * by T8 (basic updatedAt arbitration); this layer only guarantees the
  * app never clobbers a newer or foreign-lineage vault.
  *
- * Design note (Log L8): the Drive refresh token is encrypted with the
- * vault session key (T5), so the cloud check runs right after unlock
- * rather than before the password prompt — the closest RF-03 allows
- * under zero-knowledge constraints.
+ * Design note (Log L8): the cloud credential (the encrypted secret
+ * access key) is protected by the vault session key (T5), so the cloud
+ * check runs right after unlock rather than before the password prompt
+ * — the closest RF-03 allows under zero-knowledge constraints.
  */
 
 /** Cloud operations during open/save must never hang the session. */
@@ -33,7 +33,7 @@ function withTimeout(promise, ms = SYNC_TIMEOUT_MS) {
 
 export function createSyncService({
   vaultStore,
-  driveFiles,
+  vaultFiles,
   config,
   timeoutMs = SYNC_TIMEOUT_MS,
 }) {
@@ -59,8 +59,8 @@ export function createSyncService({
 
   /**
    * Adopt a foreign-lineage (different-salt) remote only when it is
-   * genuinely newer, carrying the Drive token across the session-key
-   * swap (verifier B1/B3).
+   * genuinely newer, carrying the encrypted cloud secret across the
+   * session-key swap (verifier B1/B3).
    */
   function adoptIfNewer(remote, localPayload, masterPassword) {
     let preview;
@@ -80,8 +80,9 @@ export function createSyncService({
       return { payload: localPayload, action: 'incompatible' };
     }
 
-    // Decrypt the Drive token blob with the OLD session key BEFORE the
-    // swap (verifier B3); a failure here only costs the Drive session.
+    // Decrypt the cloud secret blob with the OLD session key BEFORE
+    // the swap (verifier B3); a failure here only costs the cloud
+    // session.
     let tokenData = null;
     try {
       const blob = config.getTokenBlob ? config.getTokenBlob() : null;
@@ -144,11 +145,11 @@ export function createSyncService({
           return { payload: localPayload, action: 'skipped' };
         }
 
-        const remote = await net(driveFiles.download());
+        const remote = await net(vaultFiles.download());
 
         if (!remote) {
           // First sync: seed the cloud with the current vault.
-          await net(driveFiles.upload(vaultStore.readEnvelope()));
+          await net(vaultFiles.upload(vaultStore.readEnvelope()));
           lineage = 'verified';
           record(true);
           return { payload: localPayload, action: 'seeded' };
@@ -170,7 +171,7 @@ export function createSyncService({
         }
 
         if (localPayload.updatedAt > remotePayload.updatedAt) {
-          await net(driveFiles.upload(vaultStore.readEnvelope()));
+          await net(vaultFiles.upload(vaultStore.readEnvelope()));
           lineage = 'verified';
           record(true);
           return { payload: localPayload, action: 'pushed' };
@@ -208,7 +209,7 @@ export function createSyncService({
           return { uploaded: false, reason: 'lineage-unverified' };
         }
 
-        const remote = await net(driveFiles.download());
+        const remote = await net(vaultFiles.download());
         if (remote) {
           let remotePayload;
           try {
@@ -224,7 +225,7 @@ export function createSyncService({
           }
         }
 
-        await net(driveFiles.upload(vaultStore.readEnvelope()));
+        await net(vaultFiles.upload(vaultStore.readEnvelope()));
         record(true);
         return { uploaded: true };
       } catch (err) {

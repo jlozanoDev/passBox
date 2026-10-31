@@ -3,17 +3,32 @@ import { computed, onMounted, ref } from 'vue';
 
 const emit = defineEmits(['changed']);
 
-const status = ref({ hasCredentials: false, connected: false });
+const status = ref({
+  hasCredentials: false,
+  connected: false,
+  settings: null,
+});
 const lastSync = ref(null);
-const clientId = ref('');
-const clientSecret = ref('');
+const endpoint = ref('');
+const region = ref('');
+const bucket = ref('');
+const accessKeyId = ref('');
+const secretAccessKey = ref('');
 const busy = ref(false);
 const message = ref('');
 const error = ref('');
 
 async function refresh() {
-  status.value = await window.passbox.driveStatus();
-  lastSync.value = (await window.passbox.driveSyncStatus()).lastSync;
+  const current = await window.passbox.cloudStatus();
+  status.value = current;
+  if (current.settings) {
+    // Prefill non-secret fields only — the secret never round-trips.
+    endpoint.value = current.settings.endpoint;
+    region.value = current.settings.region;
+    bucket.value = current.settings.bucket;
+    accessKeyId.value = current.settings.accessKeyId;
+  }
+  lastSync.value = (await window.passbox.cloudSyncStatus()).lastSync;
 }
 
 // Map recorded sync reasons to plain-language states (T8: conflict
@@ -47,31 +62,22 @@ const syncState = computed(() => {
 
 onMounted(refresh);
 
-async function saveCredentials() {
-  error.value = '';
-  message.value = '';
-  try {
-    await window.passbox.driveSetCredentials({
-      clientId: clientId.value.trim(),
-      clientSecret: clientSecret.value.trim(),
-    });
-    clientId.value = '';
-    clientSecret.value = '';
-    message.value = 'Credentials saved.';
-    await refresh();
-    emit('changed');
-  } catch (err) {
-    error.value = err?.message ?? 'Could not save credentials.';
-  }
-}
-
 async function connect() {
   error.value = '';
   message.value = '';
   busy.value = true;
   try {
-    await window.passbox.driveConnect();
-    message.value = 'Google Drive connected.';
+    await window.passbox.cloudConnect({
+      endpoint: endpoint.value.trim(),
+      region: region.value.trim(),
+      bucket: bucket.value.trim(),
+      accessKeyId: accessKeyId.value.trim(),
+      secretAccessKey: secretAccessKey.value.trim(),
+    });
+    // The secret lives encrypted at rest from here on — drop it from
+    // renderer memory immediately.
+    secretAccessKey.value = '';
+    message.value = 'Cloud sync connected.';
     await refresh();
     emit('changed');
   } catch (err) {
@@ -84,7 +90,7 @@ async function connect() {
 async function disconnect() {
   error.value = '';
   message.value = '';
-  await window.passbox.driveDisconnect();
+  await window.passbox.cloudDisconnect();
   message.value = 'Disconnected.';
   await refresh();
   emit('changed');
@@ -95,12 +101,12 @@ async function disconnect() {
   <section class="rounded-xl border border-neutral-200 bg-white p-4">
     <div class="flex items-center justify-between">
       <div>
-        <h2 class="text-sm font-semibold text-neutral-900">Google Drive</h2>
+        <h2 class="text-sm font-semibold text-neutral-900">Cloud sync</h2>
         <p class="mt-0.5 text-xs text-neutral-500">
           {{
             status.connected
               ? 'Vault sync is connected.'
-              : 'Bring your own OAuth client (Desktop app).'
+              : 'Any S3-compatible bucket (AWS, Backblaze B2, Cloudflare R2, MinIO…).'
           }}
         </p>
       </div>
@@ -125,49 +131,62 @@ async function disconnect() {
     </p>
 
     <form
-      v-if="!status.hasCredentials"
+      v-if="!status.connected"
       class="mt-3 space-y-2"
-      @submit.prevent="saveCredentials"
+      @submit.prevent="connect"
     >
       <input
-        v-model="clientId"
+        v-model="endpoint"
         required
-        placeholder="OAuth Client ID"
+        placeholder="Endpoint URL (https://s3.amazonaws.com)"
         class="w-full rounded-lg border border-neutral-200 px-3 py-2 text-sm outline-none focus:border-neutral-400"
       />
       <input
-        v-model="clientSecret"
+        v-model="region"
+        required
+        placeholder="Region (us-east-1, auto…)"
+        class="w-full rounded-lg border border-neutral-200 px-3 py-2 text-sm outline-none focus:border-neutral-400"
+      />
+      <input
+        v-model="bucket"
+        required
+        placeholder="Bucket"
+        class="w-full rounded-lg border border-neutral-200 px-3 py-2 text-sm outline-none focus:border-neutral-400"
+      />
+      <input
+        v-model="accessKeyId"
+        required
+        placeholder="Access key ID"
+        class="w-full rounded-lg border border-neutral-200 px-3 py-2 text-sm outline-none focus:border-neutral-400"
+      />
+      <input
+        v-model="secretAccessKey"
         required
         type="password"
-        placeholder="OAuth Client Secret"
+        placeholder="Secret access key"
         class="w-full rounded-lg border border-neutral-200 px-3 py-2 text-sm outline-none focus:border-neutral-400"
       />
       <button
         type="submit"
-        class="w-full rounded-lg border border-neutral-300 px-3 py-2 text-sm font-medium text-neutral-700 hover:bg-neutral-50"
+        :disabled="busy"
+        class="w-full rounded-lg bg-neutral-900 px-3 py-2 text-sm font-medium text-white hover:bg-neutral-700 disabled:opacity-50"
       >
-        Save credentials
+        {{ busy ? 'Connecting…' : 'Connect' }}
       </button>
       <p class="text-xs text-neutral-400">
-        Google Cloud Console → Credentials → OAuth client ID → Desktop app.
+        The secret key is encrypted with your vault key before it is stored —
+        the provider only ever sees your encrypted vault file.
       </p>
     </form>
 
-    <div v-else-if="!status.connected" class="mt-3">
-      <button
-        type="button"
-        :disabled="busy"
-        class="w-full rounded-lg bg-neutral-900 px-3 py-2 text-sm font-medium text-white hover:bg-neutral-700 disabled:opacity-50"
-        @click="connect"
-      >
-        {{ busy ? 'Waiting for Google…' : 'Connect Google Drive' }}
-      </button>
-    </div>
-
     <div v-else class="mt-3">
+      <p class="text-xs text-neutral-500">
+        {{ status.settings?.endpoint }} · bucket
+        {{ status.settings?.bucket }}
+      </p>
       <button
         type="button"
-        class="w-full rounded-lg border border-neutral-300 px-3 py-2 text-sm font-medium text-neutral-700 hover:bg-neutral-50"
+        class="mt-2 w-full rounded-lg border border-neutral-300 px-3 py-2 text-sm font-medium text-neutral-700 hover:bg-neutral-50"
         @click="disconnect"
       >
         Disconnect

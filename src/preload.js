@@ -11,12 +11,10 @@ contextBridge.exposeInMainWorld('passbox', {
     ipcRenderer.invoke('vault:unlock', masterPassword),
   vaultSave: (payload) => ipcRenderer.invoke('vault:save', payload),
   vaultLock: () => ipcRenderer.invoke('vault:lock'),
-  driveStatus: () => ipcRenderer.invoke('drive:status'),
-  driveSetCredentials: (credentials) =>
-    ipcRenderer.invoke('drive:set-credentials', credentials),
-  driveConnect: () => ipcRenderer.invoke('drive:connect'),
-  driveDisconnect: () => ipcRenderer.invoke('drive:disconnect'),
-  driveUpload: () => ipcRenderer.invoke('drive:upload'),
-  driveDownload: () => ipcRenderer.invoke('drive:download'),
-  driveSyncStatus: () => ipcRenderer.invoke('drive:sync-status'),
+  cloudStatus: () => ipcRenderer.invoke('cloud:status'),
+  cloudConnect: (settings) => ipcRenderer.invoke('cloud:connect', settings),
+  cloudDisconnect: () => ipcRenderer.invoke('cloud:disconnect'),
+  cloudUpload: () => ipcRenderer.invoke('cloud:upload'),
+  cloudDownload: () => ipcRenderer.invoke('cloud:download'),
+  cloudSyncStatus: () => ipcRenderer.invoke('cloud:sync-status'),
 });

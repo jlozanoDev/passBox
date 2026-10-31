@@ -62,13 +62,13 @@ describe('S3/RF-03 sync regression — the local vault is never clobbered', () =
       '2020-01-01T00:00:00.000Z',
       'REMOTE-OLD-SECRET',
     );
-    const driveFiles = {
+    const vaultFiles = {
       download: vi.fn(async () => remote),
       upload: vi.fn(async () => ({ fileId: 'f1', created: false })),
     };
     const sync = createSyncService({
       vaultStore: store,
-      driveFiles,
+      vaultFiles,
       config: makeConnectedConfig(),
     });
 
@@ -116,11 +116,11 @@ describe('S3/RF-03 sync regression — the local vault is never clobbered', () =
       '2099-01-03T00:00:00.000Z',
       'From cloud',
     );
-    const driveFiles = {
+    const vaultFiles = {
       download: vi.fn(async () => remote),
       upload: vi.fn(async () => ({ fileId: 'f1', created: false })),
     };
-    const sync = createSyncService({ vaultStore: store, driveFiles, config });
+    const sync = createSyncService({ vaultStore: store, vaultFiles, config });
 
     const result = await sync.open(saved, PW);
 
@@ -142,11 +142,11 @@ describe('S3/RF-03 sync regression — the local vault is never clobbered', () =
       getTokenBlob: () => null,
       setTokenBlob: vi.fn(),
     };
-    const driveFiles = {
+    const vaultFiles = {
       download: vi.fn(async () => null),
       upload: vi.fn(async () => ({ fileId: 'f1', created: false })),
     };
-    const sync = createSyncService({ vaultStore: store, driveFiles, config });
+    const sync = createSyncService({ vaultStore: store, vaultFiles, config });
 
     await expect(sync.uploadAfterSave(payload)).resolves.toBeDefined();
   });
@@ -169,11 +169,11 @@ describe('S3/RF-03 sync regression — the local vault is never clobbered', () =
       '2099-01-03T00:00:00.000Z',
       'CLOUD-SECRET',
     );
-    const driveFiles = {
+    const vaultFiles = {
       download: vi.fn(async () => remote),
       upload: vi.fn(async () => ({ fileId: 'f1', created: false })),
     };
-    const sync = createSyncService({ vaultStore: store, driveFiles, config });
+    const sync = createSyncService({ vaultStore: store, vaultFiles, config });
 
     const result = await sync.open(saved, PW);
 

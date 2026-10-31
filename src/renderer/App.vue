@@ -4,7 +4,7 @@ import SearchBar from './components/SearchBar.vue';
 import SecretList from './components/SecretList.vue';
 import SecretModal from './components/SecretModal.vue';
 import UnlockScreen from './components/UnlockScreen.vue';
-import DriveSettings from './components/DriveSettings.vue';
+import CloudSettings from './components/CloudSettings.vue';
 
 const ready = ref(false);
 const unlocked = ref(false);
@@ -156,7 +156,7 @@ async function lock() {
     />
 
     <aside class="mt-6">
-      <DriveSettings />
+      <CloudSettings />
     </aside>
   </div>
 </template>

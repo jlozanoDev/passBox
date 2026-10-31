@@ -23,16 +23,27 @@ function isMissingObject(err) {
  * uploads and downloads the encrypted passbox.vault envelope as the
  * fixed object key `passbox.vault` inside the user's bucket (S4). No
  * fileId caching — the key is deterministic, which deletes the stale-id
- * re-resolve paths the Drive transport needed. This module never sees
+ * re-resolve paths the Drive transport needed. The bucket and client
+ * resolve per operation so a reconnect (new endpoint or secret) takes
+ * effect without rebuilding the transport. This module never sees
  * plaintext — only ciphertext envelopes — and talks to an injected
  * client so the API surface stays unit-testable without network access.
  *
  * @param {{
- *   bucket: string,
+ *   getBucket: () => string|null,
  *   createS3Client: () => {send: Function},
  * }} deps
  */
-export function createS3Files({ bucket, createS3Client }) {
+export function createS3Files({ getBucket, createS3Client }) {
+  /** A cleared or never-saved config must fail loudly, not PUT nowhere. */
+  function requireBucket() {
+    const bucket = getBucket();
+    if (!bucket) {
+      throw new Error('Cloud sync is not configured');
+    }
+    return bucket;
+  }
+
   return {
     /**
      * Upload the encrypted envelope (PUT, create-or-overwrite). The
@@ -43,6 +54,7 @@ export function createS3Files({ bucket, createS3Client }) {
      */
     async upload(envelope) {
       assertEnvelope(envelope);
+      const bucket = requireBucket();
       const s3 = createS3Client();
       await s3.send(
         new PutObjectCommand({
@@ -61,6 +73,7 @@ export function createS3Files({ bucket, createS3Client }) {
      *   vault exists yet (first sync / nothing to pull)
      */
     async download() {
+      const bucket = requireBucket();
       const s3 = createS3Client();
       try {
         const res = await s3.send(

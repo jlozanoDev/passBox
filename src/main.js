@@ -1,11 +1,11 @@
-import { app, BrowserWindow, ipcMain, shell } from 'electron';
+import { app, BrowserWindow, ipcMain } from 'electron';
 import path from 'node:path';
 import started from 'electron-squirrel-startup';
 import { createVaultStore } from './main/vault-store.js';
-import { createDriveConfig } from './main/drive-config.js';
-import { createDriveService } from './main/drive-service.js';
-import { createDriveClient } from './main/drive-client.js';
-import { createDriveFiles } from './main/drive-files.js';
+import { createS3Config } from './main/s3-config.js';
+import { createS3Service } from './main/s3-service.js';
+import { createS3Client } from './main/s3-client.js';
+import { createS3Files } from './main/s3-files.js';
 import { createSyncService } from './main/sync.js';
 
 // Handle creating/removing shortcuts on Windows when installing/uninstalling.
@@ -15,14 +15,29 @@ if (started) {
 
 /** @type {ReturnType<typeof createVaultStore>|null} */
 let vaultStore = null;
-/** @type {ReturnType<typeof createDriveService>|null} */
-let driveService = null;
-/** @type {ReturnType<typeof createDriveFiles>|null} */
-let driveFiles = null;
+/** @type {ReturnType<typeof createS3Service>|null} */
+let s3Service = null;
+/** @type {ReturnType<typeof createS3Files>|null} */
+let s3Files = null;
 /** @type {ReturnType<typeof createSyncService>|null} */
 let syncService = null;
-/** @type {ReturnType<typeof createDriveConfig>|null} */
-let driveConfig = null;
+/** @type {ReturnType<typeof createS3Config>|null} */
+let s3Config = null;
+
+/**
+ * Build an S3 client from stored settings plus the decrypted secret
+ * (S2): the secret never reaches disk in plaintext and is re-derived
+ * from the vault session key per operation.
+ */
+function createConnectedS3Client() {
+  const settings = s3Config.getCredentials();
+  const blob = s3Config.getTokenBlob();
+  if (!settings || !blob) {
+    throw new Error('Cloud sync is not connected');
+  }
+  const { secretAccessKey } = vaultStore.decryptSessionData(blob);
+  return createS3Client({ ...settings, secretAccessKey });
+}
 
 const createWindow = () => {
   const mainWindow = new BrowserWindow({
@@ -74,48 +89,47 @@ ipcMain.handle('vault:lock', () => {
   vaultStore.lock();
 });
 
-// Drive connection surface (S5): BYO credentials + loopback OAuth.
-ipcMain.handle('drive:status', () => driveService.status());
+// Cloud connection surface (S1/S2/S6): BYO S3 settings, one action —
+// validate with HeadBucket, then store the secret encrypted at rest.
+ipcMain.handle('cloud:status', () => s3Service.status());
 
-ipcMain.handle('drive:set-credentials', (_event, credentials) =>
-  driveService.setCredentials(credentials),
+ipcMain.handle('cloud:connect', (_event, settings) =>
+  s3Service.connect(settings),
 );
 
-ipcMain.handle('drive:connect', () => driveService.connect());
-
-ipcMain.handle('drive:disconnect', () => {
-  driveService.disconnect();
+ipcMain.handle('cloud:disconnect', () => {
+  s3Service.disconnect();
 });
 
 // Sync/conflict surface (S3/T8): last sync outcome + deferred state.
-ipcMain.handle('drive:sync-status', () => ({
-  drive: driveService.status(),
-  lastSync: driveConfig.getLastSync(),
+ipcMain.handle('cloud:sync-status', () => ({
+  cloud: s3Service.status(),
+  lastSync: s3Config.getLastSync(),
 }));
 
-// Vault transport (S8/S3): the envelope comes from the vault file on
+// Vault transport (S4/S3): the envelope comes from the vault file on
 // disk in this process — the renderer never supplies upload bytes and
 // only ever receives ciphertext envelopes back.
-ipcMain.handle('drive:upload', () =>
-  driveFiles.upload(vaultStore.readEnvelope()),
-);
+ipcMain.handle('cloud:upload', () => s3Files.upload(vaultStore.readEnvelope()));
 
-ipcMain.handle('drive:download', () => driveFiles.download());
+ipcMain.handle('cloud:download', () => s3Files.download());
 
 app.whenReady().then(() => {
   vaultStore = createVaultStore(app.getPath('userData'));
-  driveConfig = createDriveConfig(app.getPath('userData'));
-  driveService = createDriveService(driveConfig, vaultStore, (url) =>
-    shell.openExternal(url),
-  );
-  driveFiles = createDriveFiles({
-    config: driveConfig,
-    createDriveClient: () => createDriveClient(driveConfig, vaultStore),
+  s3Config = createS3Config(app.getPath('userData'));
+  s3Service = createS3Service({
+    config: s3Config,
+    vaultStore,
+    createS3Client,
+  });
+  s3Files = createS3Files({
+    getBucket: () => s3Config.getCredentials()?.bucket ?? null,
+    createS3Client: createConnectedS3Client,
   });
   syncService = createSyncService({
     vaultStore,
-    driveFiles,
-    config: driveConfig,
+    vaultFiles: s3Files,
+    config: s3Config,
   });
   createWindow();
 

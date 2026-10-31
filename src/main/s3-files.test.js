@@ -6,10 +6,7 @@ import {
 } from '@aws-sdk/client-s3';
 import { createS3Client } from './s3-client.js';
 import { VAULT_FILE_NAME, createS3Files } from './s3-files.js';
-import {
-  assertEnvelope,
-  parseEnvelopeBody,
-} from './vault-envelope.js';
+import { assertEnvelope, parseEnvelopeBody } from './vault-envelope.js';
 
 const envelope = {
   salt: 'c2FsdA==',
@@ -57,9 +54,9 @@ describe('vault-envelope (shared shape gate, v1.0 S10)', () => {
     expect(() => assertEnvelope({ secret: 'sk_live_PLAINTEXT' })).toThrow(
       /Invalid vault envelope/,
     );
-    expect(() =>
-      assertEnvelope({ salt: 'a', iv: 'b', authTag: 'c' }),
-    ).toThrow(/Invalid vault envelope/);
+    expect(() => assertEnvelope({ salt: 'a', iv: 'b', authTag: 'c' })).toThrow(
+      /Invalid vault envelope/,
+    );
     expect(() => assertEnvelope(undefined)).toThrow(/Invalid vault envelope/);
     expect(() => assertEnvelope(envelope.salt)).toThrow(
       /Invalid vault envelope/,
@@ -96,7 +93,10 @@ describe('s3-client', () => {
 describe('s3-files upload (S1/S3: fixed passbox.vault key)', () => {
   it('rejects a malformed envelope before any S3 call (S6 gate)', async () => {
     const s3 = createMockS3();
-    const files = createS3Files({ bucket: 'bkt', createS3Client: () => s3 });
+    const files = createS3Files({
+      getBucket: () => 'bkt',
+      createS3Client: () => s3,
+    });
     await expect(files.upload({ secret: 'sk_live_PLAINTEXT' })).rejects.toThrow(
       /Invalid vault envelope/,
     );
@@ -105,7 +105,10 @@ describe('s3-files upload (S1/S3: fixed passbox.vault key)', () => {
 
   it('PUTs the JSON envelope as passbox.vault in the configured bucket', async () => {
     const s3 = createMockS3();
-    const files = createS3Files({ bucket: 'my-bucket', createS3Client: () => s3 });
+    const files = createS3Files({
+      getBucket: () => 'my-bucket',
+      createS3Client: () => s3,
+    });
     const result = await files.upload(envelope);
 
     expect(result).toEqual({ key: VAULT_FILE_NAME });
@@ -123,7 +126,7 @@ describe('s3-files upload (S1/S3: fixed passbox.vault key)', () => {
   it('obtains a fresh client per operation', async () => {
     const clients = [];
     const files = createS3Files({
-      bucket: 'bkt',
+      getBucket: () => 'bkt',
       createS3Client: () => {
         const client = createMockS3();
         clients.push(client);
@@ -135,6 +138,17 @@ describe('s3-files upload (S1/S3: fixed passbox.vault key)', () => {
     expect(clients).toHaveLength(2);
     expect(clients[0]).not.toBe(clients[1]);
   });
+
+  it('fails loudly when the bucket is not configured', async () => {
+    const s3 = createMockS3();
+    const files = createS3Files({
+      getBucket: () => null,
+      createS3Client: () => s3,
+    });
+    await expect(files.upload(envelope)).rejects.toThrow(/not configured/);
+    await expect(files.download()).rejects.toThrow(/not configured/);
+    expect(s3.calls).toHaveLength(0);
+  });
 });
 
 describe('s3-files download (S3: remote envelope or null)', () => {
@@ -142,7 +156,10 @@ describe('s3-files download (S3: remote envelope or null)', () => {
     const s3 = createMockS3({
       send: async () => bodyReturning(JSON.stringify(envelope)),
     });
-    const files = createS3Files({ bucket: 'bkt', createS3Client: () => s3 });
+    const files = createS3Files({
+      getBucket: () => 'bkt',
+      createS3Client: () => s3,
+    });
     const result = await files.download();
     expect(result).toEqual(envelope);
     const command = s3.calls[0];
@@ -156,7 +173,10 @@ describe('s3-files download (S3: remote envelope or null)', () => {
         throw noSuchKeyError();
       },
     });
-    const files = createS3Files({ bucket: 'bkt', createS3Client: () => s3 });
+    const files = createS3Files({
+      getBucket: () => 'bkt',
+      createS3Client: () => s3,
+    });
     await expect(files.download()).resolves.toBeNull();
   });
 
@@ -168,7 +188,10 @@ describe('s3-files download (S3: remote envelope or null)', () => {
         });
       },
     });
-    const files = createS3Files({ bucket: 'bkt', createS3Client: () => s3 });
+    const files = createS3Files({
+      getBucket: () => 'bkt',
+      createS3Client: () => s3,
+    });
     await expect(files.download()).resolves.toBeNull();
   });
 
@@ -176,7 +199,10 @@ describe('s3-files download (S3: remote envelope or null)', () => {
     const s3 = createMockS3({
       send: async () => bodyReturning('{nope'),
     });
-    const files = createS3Files({ bucket: 'bkt', createS3Client: () => s3 });
+    const files = createS3Files({
+      getBucket: () => 'bkt',
+      createS3Client: () => s3,
+    });
     await expect(files.download()).rejects.toThrow(/not valid JSON/);
   });
 
@@ -186,7 +212,10 @@ describe('s3-files download (S3: remote envelope or null)', () => {
         throw forbiddenError();
       },
     });
-    const files = createS3Files({ bucket: 'bkt', createS3Client: () => s3 });
+    const files = createS3Files({
+      getBucket: () => 'bkt',
+      createS3Client: () => s3,
+    });
     await expect(files.download()).rejects.toThrow(/AccessDenied/);
   });
 });
