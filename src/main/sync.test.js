@@ -21,6 +21,7 @@ function makeDeps({ connected = true, remote = null, tokenBlob = null } = {}) {
     recordSync: vi.fn(),
     getTokenBlob: vi.fn(() => tokenBlob),
     setTokenBlob: vi.fn(),
+    clearToken: vi.fn(),
   };
   const vaultStore = {
     readEnvelope: vi.fn(() => localEnvelope),
@@ -176,6 +177,34 @@ describe('syncService.open (RF-03: check cloud on open)', () => {
     expect(deps.config.setTokenBlob).toHaveBeenCalledWith(
       deps.vaultStore.encryptSessionData.mock.results[0].value,
     );
+  });
+
+  it('still returns the adopted payload when the token re-wrap fails (B3 residual)', async () => {
+    const remotePayload = {
+      ...localPayload,
+      salt: 'RE1PVEU=',
+      updatedAt: '2026-01-03T00:00:00.000Z',
+    };
+    const remoteEnvelope = { ...localEnvelope, salt: 'RE1PVEU=' };
+    const deps = makeDeps({
+      remote: remoteEnvelope,
+      tokenBlob: { iv: 'aXY=', authTag: 'dGFn', ciphertext: 'eA==' },
+    });
+    deps.vaultStore.previewRemoteWithPassword.mockReturnValue(remotePayload);
+    deps.vaultStore.adoptRemote.mockReturnValue(remotePayload);
+    deps.config.setTokenBlob.mockImplementation(() => {
+      throw new Error('disk full');
+    });
+    const sync = createSyncService(deps);
+
+    const result = await sync.open(localPayload, 'master-pw');
+
+    // Adoption committed on disk: the renderer must receive the
+    // adopted payload, never the stale local one.
+    expect(result.action).toBe('pulled');
+    expect(result.payload).toBe(remotePayload);
+    // The orphaned token is dropped so the reconnect flow surfaces.
+    expect(deps.config.clearToken).toHaveBeenCalled();
   });
 
   it('pushes when the local vault is newer than the remote', async () => {

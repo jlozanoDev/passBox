@@ -80,31 +80,52 @@ export function createSyncService({
       return { payload: localPayload, action: 'incompatible' };
     }
 
+    // Decrypt the Drive token blob with the OLD session key BEFORE the
+    // swap (verifier B3); a failure here only costs the Drive session.
+    let tokenData = null;
     try {
-      // The token blob is encrypted with the OLD session key: decrypt
-      // it before the swap and re-encrypt after, or every adoption
-      // would silently orphan the Drive session (verifier B3).
       const blob = config.getTokenBlob ? config.getTokenBlob() : null;
-      let tokenData = null;
       if (blob) {
-        try {
-          tokenData = vaultStore.decryptSessionData(blob);
-        } catch {
-          // already unreadable — user reconnects Drive if needed
-        }
+        tokenData = vaultStore.decryptSessionData(blob);
       }
-      const adopted = vaultStore.adoptRemote(remote, masterPassword);
-      if (tokenData) {
-        config.setTokenBlob(vaultStore.encryptSessionData(tokenData));
-      }
-      lineage = 'verified';
-      record(true);
-      return { payload: adopted, action: 'pulled' };
     } catch {
+      tokenData = null;
+    }
+
+    let adopted;
+    try {
+      adopted = vaultStore.adoptRemote(remote, masterPassword);
+    } catch {
+      // Persist failed: session and file are untouched, the local
+      // payload is still the truth (verifier B2).
       lineage = 'blocked';
       record(false, 'incompatible-vault');
       return { payload: localPayload, action: 'incompatible' };
     }
+
+    // ADOPTION IS COMMITTED: file and session hold the remote, so every
+    // path below must return `adopted` — never the stale local payload
+    // (verifier B3 residual: a token write failure must not desync the
+    // renderer from disk).
+    if (tokenData) {
+      try {
+        config.setTokenBlob(vaultStore.encryptSessionData(tokenData));
+      } catch {
+        // Best effort: drop the token so the reconnect flow surfaces
+        // instead of failing silently forever.
+        try {
+          if (config.clearToken) {
+            config.clearToken();
+          }
+        } catch {
+          // ignore: diagnostics only
+        }
+      }
+    }
+
+    lineage = 'verified';
+    record(true);
+    return { payload: adopted, action: 'pulled' };
   }
 
   return {
