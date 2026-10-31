@@ -123,7 +123,7 @@ Acceptance: work proceeds in this order; each phase's artifacts are delivered an
 | T4  | S1, S2, S9, S10               | inline | done    | 5851671 (+fix 8c09012)           |
 | T5  | S5                            | inline | done    | 7bef457                          |
 | T6  | S8, S3 (upload/download)      | inline | done    | ecbcf24 (+fix 1d99142, verified) |
-| T7  | S4, S3 (auto-sync)            | inline | done    | 94c6d1a (+fix b5bf9a3, verified) |
+| T7 | S4, S3 (auto-sync) | inline | done | 94c6d1a (+fixes b5bf9a3, 5b55bdf, verified) |
 | T8  | S3 (conflicts by `updatedAt`) | inline | pending | —                                |
 | T9  | S12 (Fase 4 packaging)        | inline | pending | —                                |
 
@@ -212,3 +212,5 @@ Notes on routes: all tasks are currently planned inline (small-to-medium underst
   B3: every adoption invalidated the encrypted Drive refresh token (bound to the old session key) while the UI still showed Connected. Fix: decrypt the token blob before the swap, re-encrypt after.
   Advisories fixed: open/uploadAfterSave never reject even when electron-store is broken (A2); 15s cloud-operation timeout so unlock can never hang on a black-holed network (A1); last-sync outcome now recorded for uptodate/incompatible/remote-newer/lineage-unverified (A3).
   Known/deferred: pre-flight download→upload TOCTOU is inherent until T8 conflict resolution (A5); UnlockScreen mislabels non-password errors — pre-existing, UI polish (A6); `getLastSync` has no renderer consumer yet (A3) — surface planned with T8.
+
+- L10 (dev, 2026-10-31) — second correction for the B3 residual (5b55bdf): after `adoptRemote` commits, a failed Drive-token re-wrap could return the stale local payload while disk held the adopted vault (next save → undecryptable). Fix: the token re-wrap moved out of the adoption try-block; once adoption commits every path returns the adopted payload, and a failed token write clears the Drive token so the reconnect flow surfaces. Verifier recheck: RESOLVED (R6/R7/R8), 74/74 tests, lint PASS (table alignment finally canonical). A test-side gotcha: a test helper building foreign envelopes with mismatched payload/envelope salts reproduced an unlock failure — production `vault-store.create` keeps both salts identical; the helper now mirrors that invariant.
