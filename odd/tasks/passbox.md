@@ -115,17 +115,17 @@ Acceptance: work proceeds in this order; each phase's artifacts are delivered an
 
 ## Tasks
 
-| ID  | Spec                          | Route  | Status  | Commit / evidence                |
-| --- | ----------------------------- | ------ | ------- | -------------------------------- |
-| T1  | S11, S12                      | inline | done    | 9b041a7                          |
-| T2  | S12 (Fase 1), S4 (UI surface) | inline | done    | 3bb5721                          |
-| T3  | S6, S7, S10                   | inline | done    | 3818cd9                          |
-| T4  | S1, S2, S9, S10               | inline | done    | 5851671 (+fix 8c09012)           |
-| T5  | S5                            | inline | done    | 7bef457                          |
-| T6  | S8, S3 (upload/download)      | inline | done    | ecbcf24 (+fix 1d99142, verified) |
-| T7 | S4, S3 (auto-sync) | inline | done | 94c6d1a (+fixes b5bf9a3, 5b55bdf, verified) |
-| T8  | S3 (conflicts by `updatedAt`) | inline | pending | —                                |
-| T9  | S12 (Fase 4 packaging)        | inline | pending | —                                |
+| ID  | Spec                          | Route  | Status  | Commit / evidence                           |
+| --- | ----------------------------- | ------ | ------- | ------------------------------------------- |
+| T1  | S11, S12                      | inline | done    | 9b041a7                                     |
+| T2  | S12 (Fase 1), S4 (UI surface) | inline | done    | 3bb5721                                     |
+| T3  | S6, S7, S10                   | inline | done    | 3818cd9                                     |
+| T4  | S1, S2, S9, S10               | inline | done    | 5851671 (+fix 8c09012)                      |
+| T5  | S5                            | inline | done    | 7bef457                                     |
+| T6  | S8, S3 (upload/download)      | inline | done    | ecbcf24 (+fix 1d99142, verified)            |
+| T7  | S4, S3 (auto-sync)            | inline | done    | 94c6d1a (+fixes b5bf9a3, 5b55bdf, verified) |
+| T8  | S3 (conflicts by `updatedAt`) | inline | done    | 9082fd5                                     |
+| T9  | S12 (Fase 4 packaging)        | inline | pending | —                                           |
 
 Notes on routes: all tasks are currently planned inline (small-to-medium understood changes in a greenfield repo; no writer trigger — no parallel independent units launched together and no context backstop reached). Re-evaluate if a task grows past the inline budget.
 
@@ -212,5 +212,7 @@ Notes on routes: all tasks are currently planned inline (small-to-medium underst
   B3: every adoption invalidated the encrypted Drive refresh token (bound to the old session key) while the UI still showed Connected. Fix: decrypt the token blob before the swap, re-encrypt after.
   Advisories fixed: open/uploadAfterSave never reject even when electron-store is broken (A2); 15s cloud-operation timeout so unlock can never hang on a black-holed network (A1); last-sync outcome now recorded for uptodate/incompatible/remote-newer/lineage-unverified (A3).
   Known/deferred: pre-flight download→upload TOCTOU is inherent until T8 conflict resolution (A5); UnlockScreen mislabels non-password errors — pre-existing, UI polish (A6); `getLastSync` has no renderer consumer yet (A3) — surface planned with T8.
+
+- L11 (dev, 2026-10-31) — T8 (conflict visibility) complete: the `updatedAt` last-writer-wins arbitration itself shipped inside T7 (Log L8); T8 adds the visible surface — new `drive:sync-status` IPC returns `{drive, lastSync}` and DriveSettings renders plain-language sync states: last-sync time when OK, amber notices for `remote-newer` (merges on reopen), `incompatible-vault`/`lineage-changed` (different master password), `lineage-unverified` (resumes after next open check), and a generic failed line otherwise. This closes advisory A3 (lastSync consumer). TOCTOU (A5) documented as accepted: pre-flight narrows the window, full closure would need Drive conditional updates — out of "basic" scope. UI copy English per artifact rules.
 
 - L10 (dev, 2026-10-31) — second correction for the B3 residual (5b55bdf): after `adoptRemote` commits, a failed Drive-token re-wrap could return the stale local payload while disk held the adopted vault (next save → undecryptable). Fix: the token re-wrap moved out of the adoption try-block; once adoption commits every path returns the adopted payload, and a failed token write clears the Drive token so the reconnect flow surfaces. Verifier recheck: RESOLVED (R6/R7/R8), 74/74 tests, lint PASS (table alignment finally canonical). A test-side gotcha: a test helper building foreign envelopes with mismatched payload/envelope salts reproduced an unlock failure — production `vault-store.create` keeps both salts identical; the helper now mirrors that invariant.
