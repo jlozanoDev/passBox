@@ -81,4 +81,14 @@ describe('drive-config', () => {
       config.setCredentials({ clientId: 'x', clientSecret: '' }),
     ).toThrow();
   });
+
+  it('stores, returns and clears the cached remote fileId', () => {
+    expect(config.getFileId()).toBeNull();
+
+    config.setFileId('drive-file-123');
+    expect(config.getFileId()).toBe('drive-file-123');
+
+    config.clearFileId();
+    expect(config.getFileId()).toBeNull();
+  });
 });

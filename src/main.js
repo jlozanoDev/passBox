@@ -4,6 +4,8 @@ import started from 'electron-squirrel-startup';
 import { createVaultStore } from './main/vault-store.js';
 import { createDriveConfig } from './main/drive-config.js';
 import { createDriveService } from './main/drive-service.js';
+import { createDriveClient } from './main/drive-client.js';
+import { createDriveFiles } from './main/drive-files.js';
 
 // Handle creating/removing shortcuts on Windows when installing/uninstalling.
 if (started) {
@@ -14,6 +16,10 @@ if (started) {
 let vaultStore = null;
 /** @type {ReturnType<typeof createDriveService>|null} */
 let driveService = null;
+/** @type {ReturnType<typeof createDriveFiles>|null} */
+let driveFiles = null;
+/** @type {ReturnType<typeof createDriveConfig>|null} */
+let driveConfig = null;
 
 const createWindow = () => {
   const mainWindow = new BrowserWindow({
@@ -65,13 +71,23 @@ ipcMain.handle('drive:disconnect', () => {
   driveService.disconnect();
 });
 
+// Vault transport (S8/S3): ciphertext envelopes only cross this bridge.
+ipcMain.handle('drive:upload', (_event, envelope) =>
+  driveFiles.upload(envelope),
+);
+
+ipcMain.handle('drive:download', () => driveFiles.download());
+
 app.whenReady().then(() => {
   vaultStore = createVaultStore(app.getPath('userData'));
-  driveService = createDriveService(
-    createDriveConfig(app.getPath('userData')),
-    vaultStore,
-    (url) => shell.openExternal(url),
+  driveConfig = createDriveConfig(app.getPath('userData'));
+  driveService = createDriveService(driveConfig, vaultStore, (url) =>
+    shell.openExternal(url),
   );
+  driveFiles = createDriveFiles({
+    config: driveConfig,
+    createDriveClient: () => createDriveClient(driveConfig, vaultStore),
+  });
   createWindow();
 
   app.on('activate', () => {

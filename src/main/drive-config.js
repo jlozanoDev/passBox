@@ -12,6 +12,7 @@ const KEYS = {
   clientId: 'google.clientId',
   clientSecret: 'google.clientSecret',
   tokenBlob: 'google.tokenBlob',
+  fileId: 'google.fileId',
 };
 
 /**
@@ -49,6 +50,19 @@ export function createDriveConfig(cwd) {
 
     clearToken() {
       store.delete(KEYS.tokenBlob);
+    },
+
+    /** Cached id of the remote passbox.vault file (appDataFolder). */
+    getFileId() {
+      return store.get(KEYS.fileId) ?? null;
+    },
+
+    setFileId(fileId) {
+      store.set(KEYS.fileId, fileId);
+    },
+
+    clearFileId() {
+      store.delete(KEYS.fileId);
     },
 
     getStatus() {
