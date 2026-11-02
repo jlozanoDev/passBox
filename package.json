@@ -3,7 +3,7 @@
   "productName": "Passbox",
   "version": "1.0.0",
   "private": true,
-  "description": "Local-first zero-knowledge secret manager with Google Drive sync",
+  "description": "Local-first zero-knowledge secret manager with S3-compatible sync",
   "keywords": [],
   "license": "MIT",
   "author": {

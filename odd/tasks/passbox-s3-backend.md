@@ -48,13 +48,13 @@ Acceptance: `DriveSettings.vue` becomes a credential form — endpoint, region, 
 
 ## Tasks
 
-| ID  | Spec   | Route  | Status  | Commit / evidence                                                   |
-| --- | ------ | ------ | ------- | ------------------------------------------------------------------- |
-| T1  | S1, S3 | inline | done    | 93937c2 (RED→GREEN, 13 tests)                                       |
-| T2  | S2     | inline | done    | 6f4cff1 (RED→GREEN, 6 tests)                                        |
-| T3  | S3, S6 | inline | done    | 37f956e (RED→GREEN, 8 tests; suite 102/102)                         |
-| T4  | S1, S5 | inline | pending | remove Google integration (`oauth.js`, `drive-*.js`, deps) + README |
-| T5  | all    | inline | pending | full suite, lint, package build gate                                |
+| ID  | Spec   | Route  | Status | Commit / evidence                                                                         |
+| --- | ------ | ------ | ------ | ----------------------------------------------------------------------------------------- |
+| T1  | S1, S3 | inline | done   | 93937c2 (RED→GREEN, 13 tests)                                                             |
+| T2  | S2     | inline | done   | 6f4cff1 (RED→GREEN, 6 tests)                                                              |
+| T3  | S3, S6 | inline | done   | 37f956e (RED→GREEN, 8 tests; suite 102/102)                                               |
+| T4  | S1, S5 | inline | done   | eade71b (Google removal, −1545 lines, deps swapped; README + package description)         |
+| T5  | all    | inline | done   | suite 73/73, lint clean, `npm run package` OK; assess 7dfb0ac..HEAD = medium/under_budget |
 
 Route evidence: units are sequential (each depends on the previous), so no parallel-writer reason; parent writes inline following this logbook.
 
@@ -76,3 +76,7 @@ Evidence behind the final call: Dropbox access tokens expire in 4h but refresh t
 ### L3 — Architecture notes (2026-10-31)
 
 Transport contract consumed by `sync.js`: `download()` → envelope|null, `upload(envelope)` → confirmation; envelope shape gate `{salt, iv, authTag, ciphertext}` moves to a shared module. The session-secret rewrap in `adoptIfNewer` (v1.0 verifier B3) is provider-agnostic: S3 config exposes the same `getTokenBlob/setTokenBlob/clearToken` surface carrying the encrypted secret access key. Key caching (`fileId`) is Drive-only — S3 needs none (fixed object key), which deletes the stale-id/re-resolve paths entirely.
+
+### L4 — Delivery evidence (2026-10-31)
+
+Work units: 93937c2 (T1 transport, RED→GREEN 13 tests) · 6f4cff1 (T2 config, RED→GREEN 6 tests) · 37f956e (T3 rewire: service RED→GREEN 8 tests, `cloud:*` IPC, CloudSettings.vue, sync param rename; suite 102/102) · eade71b (T4 Google removal, −1545 lines, deps swapped). T5: suite 73/73 (29 Google tests removed with their modules), `npm run lint` clean, `npm run package` gate passed (Electron bundle compiles with @aws-sdk/client-s3). Native assess over 7dfb0ac..HEAD committed-only: risk=medium (configuration_change), review_due=false (under_budget) — boundary stays at 7dfb0ac. Risk line for the feature: item 2 (new secret-at-rest handling: S3 secret access key) and item 5 (dependency swap) → one independent verifier at feature end.
