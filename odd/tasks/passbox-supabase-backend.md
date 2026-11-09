@@ -94,3 +94,13 @@ Transport contract today (`sync.js` → `s3-files.js`): `download()`/`upload(env
 ### L4 — Delivery evidence (2026-11-09)
 
 Work units: a43353a (T1 config+migrator, RED→GREEN 14) · 85689bc (T2 row-crypto, RED→GREEN 10) · 0e8e25d (T3 store, RED→GREEN 10) · 23471ad (T4 rewire, RED→GREEN 12 cloud tests, S3 removed −2080 lines) · 498ff06/23cad5f (lint cleanups) · f636904 (doc close). T5: suite 67/67, `npm run package` OK (Electron bundles with `postgres`), oxlint clean on new/changed src files. Pre-existing `oxfmt --check` redness on `odd/tasks/*.md` and older renderer files remains (baseline debt, not this feature). Native assess d246216..HEAD: risk=medium (configuration_change), review_due=false (under_budget). Risk line: item 2 (secret-at-rest: Supabase service key + database connection URL) and item 5 (dependency swap: −`@aws-sdk/client-s3`, +`postgres`) → one independent verifier at feature end.
+
+### L5 — Independent verification + correction (2026-11-09)
+
+Feature-end verifier: **FAIL → 3 blockers**, all fixed in one correction batch (`16bbc8b`), regression tests committed:
+
+- **B1**: `uploadAfterSave` soft-deleted every remote row absent from local payload — a peer's new row vanished on the other device's save. Fix: only soft-delete ids in `knownRemoteIds` (pulled at last open) and only when not newer than local; peer rows never seen are left alone.
+- **B2**: one undecryptable row aborted the whole pull (0 items, offline). Fix: per-row try/catch in `pullItems` — skip foreign/corrupt ciphertext, keep the rest.
+- **B3**: `connect()` reset lineage and never imported; next save refused with `lineage-unverified` and the cloud held 0 passwords. Fix: `connect(credentials, {masterPassword})` bootstraps `open()` immediately while unlocked; `main.js` keeps the master password in memory only while unlocked (cleared on lock/quit). Also persist a `pulled` merge to the local vault file (advisory A2).
+
+Post-correction suite: **72/72**. Advisories left open (non-blocking): A1 service key stored but unused for auth (transport is the connection string), A3 migrator export unused, A4 timeout does not cancel the query, A5 non-uuid ids fail the uuid column.
