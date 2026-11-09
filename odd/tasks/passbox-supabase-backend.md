@@ -66,7 +66,7 @@ Assumption (flagged): a machine that already has a local encrypted vault imports
 | ID  | Spec   | Route  | Status | Commit / evidence |
 | --- | ------ | ------ | ------ | ----------------- |
 | T1  | S1, S4 | inline | done   | RED→GREEN 14 tests (supabase-config + supabase-migrate); `postgres` dep added |
-| T2  | S2, S3 | inline | todo   | —                 |
+| T2  | S2, S3 | inline | done   | RED→GREEN 10 tests (row-crypto: shared salt, multi-client decrypt, wrong-password reject) |
 | T3  | S5, S8 | inline | todo   | —                 |
 | T4  | S6, S7 | inline | todo   | —                 |
 | T5  | all    | inline | todo   | —                 |
