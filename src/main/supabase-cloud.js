@@ -52,6 +52,13 @@ export function createSupabaseCloud({
   let sessionDataKey = null;
   /** Verified this session against the shared salt lineage. */
   let lineage = 'unverified';
+  /**
+   * Row ids this client pulled at the last open (B1): only these may be
+   * soft-deleted when absent from the local payload. Peer rows we have
+   * never seen are left untouched.
+   * @type {Set<string>}
+   */
+  let knownRemoteIds = new Set();
 
   const net = (promise) => withTimeout(promise);
 
@@ -100,13 +107,21 @@ export function createSupabaseCloud({
 
   async function pullItems(store, key) {
     const rows = await store.listRows();
-    return rows.map((row) => {
-      const item = decryptRow(
-        { iv: row.iv, authTag: row.authTag, ciphertext: row.ciphertext },
-        key,
-      );
-      return { ...item, updatedAt: item.updatedAt ?? row.updatedAt };
-    });
+    const items = [];
+    for (const row of rows) {
+      // B2: one foreign/undecryptable row must not abort the whole pull.
+      try {
+        const item = decryptRow(
+          { iv: row.iv, authTag: row.authTag, ciphertext: row.ciphertext },
+          key,
+        );
+        items.push({ ...item, updatedAt: item.updatedAt ?? row.updatedAt });
+      } catch {
+        // Skip rows this key cannot authenticate (other master password
+        // or corrupted ciphertext); the rest of the vault still loads.
+      }
+    }
+    return items;
   }
 
   return {
@@ -122,8 +137,12 @@ export function createSupabaseCloud({
     /**
      * Validate, migrate schema, persist encrypted secrets (S1/S4/S6).
      * @param {{projectUrl: string, serviceKey: string, databaseUrl: string}} credentials
+     * @param {{masterPassword?: string}} [options] when provided and the
+     *   vault is unlocked, immediately open()/import so Connect leaves
+     *   lineage verified and the cloud holds the existing passwords (B3).
+     * @returns {Promise<{connected: boolean}>}
      */
-    async connect({ projectUrl, serviceKey, databaseUrl } = {}) {
+    async connect({ projectUrl, serviceKey, databaseUrl } = {}, options = {}) {
       if (!projectUrl) throw new Error('Supabase project URL is required');
       if (!serviceKey) throw new Error('Service key is required');
       if (!databaseUrl) throw new Error('Database connection URL is required');
@@ -146,6 +165,22 @@ export function createSupabaseCloud({
       });
       lineage = 'unverified';
       sessionDataKey = null;
+      knownRemoteIds = new Set();
+
+      // B3: establish lineage + import now when the caller can supply
+      // the master password (main process keeps it only while unlocked).
+      if (options.masterPassword && vaultStore.status().unlocked) {
+        try {
+          const payload = vaultStore.decryptWithSession(
+            vaultStore.readEnvelope(),
+          );
+          await this.open(payload, options.masterPassword);
+        } catch {
+          // Offline or empty local vault: connect still succeeds; the
+          // next unlock runs open() and finishes the bootstrap.
+        }
+      }
+
       return { connected: true };
     },
 
@@ -153,6 +188,7 @@ export function createSupabaseCloud({
       config.clearSecrets();
       sessionDataKey = null;
       lineage = 'unverified';
+      knownRemoteIds = new Set();
     },
 
     /**
@@ -172,10 +208,14 @@ export function createSupabaseCloud({
         try {
           const key = await net(ensureDataKey(store, masterPassword));
           const remoteItems = await net(pullItems(store, key));
+          knownRemoteIds = new Set(remoteItems.map((item) => item.id));
 
           if (remoteItems.length === 0) {
             if (localPayload.items.length > 0) {
               await net(store.importItems(localPayload.items, key));
+              for (const item of localPayload.items) {
+                knownRemoteIds.add(item.id);
+              }
             }
             lineage = 'verified';
             config.recordSync(true);
@@ -257,9 +297,26 @@ export function createSupabaseCloud({
             remoteById.delete(item.id);
           }
 
-          // Soft-delete rows removed locally so other clients observe it.
+          // B1: soft-delete only rows this client pulled at last open
+          // and that the local payload no longer has (intentional local
+          // delete). Peer rows we have never seen are never removed.
           for (const orphan of remoteById.values()) {
+            if (!knownRemoteIds.has(orphan.id)) {
+              continue;
+            }
+            if (
+              Date.parse(orphan.updatedAt ?? 0) >
+              Date.parse(localPayload.updatedAt ?? 0)
+            ) {
+              config.recordSync(false, 'remote-newer');
+              return { uploaded: false, reason: 'remote-newer' };
+            }
             await net(store.softDelete(orphan.id));
+            knownRemoteIds.delete(orphan.id);
+          }
+
+          for (const item of localPayload.items) {
+            knownRemoteIds.add(item.id);
           }
 
           config.recordSync(true);

@@ -16,6 +16,12 @@ let vaultStore = null;
 let cloudService = null;
 /** @type {ReturnType<typeof createSupabaseConfig>|null} */
 let cloudConfig = null;
+/**
+ * Master password kept only in memory while the vault is unlocked so
+ * cloud:connect can bootstrap lineage/import (B3). Cleared on lock/quit.
+ * @type {string|null}
+ */
+let sessionMasterPassword = null;
 
 const createWindow = () => {
   const mainWindow = new BrowserWindow({
@@ -42,6 +48,7 @@ ipcMain.handle('vault:status', () => vaultStore.status());
 
 ipcMain.handle('vault:create', async (_event, masterPassword) => {
   const payload = vaultStore.create(masterPassword);
+  sessionMasterPassword = masterPassword;
   // RF-03: an existing cloud vault (reinstall flow) replaces the fresh
   // local one right after creation — same rules as unlock.
   const { payload: fresh } = await cloudService.open(payload, masterPassword);
@@ -50,8 +57,16 @@ ipcMain.handle('vault:create', async (_event, masterPassword) => {
 
 ipcMain.handle('vault:unlock', async (_event, masterPassword) => {
   const payload = vaultStore.unlock(masterPassword);
+  sessionMasterPassword = masterPassword;
   // RF-03: check the cloud on open and merge newer remote rows.
-  const { payload: fresh } = await cloudService.open(payload, masterPassword);
+  const { payload: fresh, action } = await cloudService.open(
+    payload,
+    masterPassword,
+  );
+  // A2: persist a pulled merge so the local file matches what we return.
+  if (action === 'pulled') {
+    vaultStore.save(fresh);
+  }
   return fresh;
 });
 
@@ -65,14 +80,18 @@ ipcMain.handle('vault:save', (_event, payload) => {
 
 ipcMain.handle('vault:lock', () => {
   vaultStore.lock();
+  sessionMasterPassword = null;
 });
 
 // Cloud connection surface (S1/S2/S6): BYO Supabase settings, one
-// action — migrate schema, then store the secrets encrypted at rest.
+// action — migrate schema, store the secrets encrypted at rest, then
+// bootstrap import/lineage while the vault is still unlocked (B3).
 ipcMain.handle('cloud:status', () => cloudService.status());
 
 ipcMain.handle('cloud:connect', (_event, settings) =>
-  cloudService.connect(settings),
+  cloudService.connect(settings, {
+    masterPassword: sessionMasterPassword,
+  }),
 );
 
 ipcMain.handle('cloud:disconnect', () => {
@@ -104,6 +123,7 @@ app.whenReady().then(() => {
 // RNF-04: overwrite the session key when the app quits.
 app.on('before-quit', () => {
   vaultStore?.lock();
+  sessionMasterPassword = null;
 });
 
 app.on('window-all-closed', () => {

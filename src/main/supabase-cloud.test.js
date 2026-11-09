@@ -45,7 +45,7 @@ function makeConfig() {
   };
 }
 
-function makeVaultStore({ unlocked = true } = {}) {
+function makeVaultStore({ unlocked = true, payload = null } = {}) {
   return {
     status: vi.fn(() => ({ exists: true, unlocked })),
     encryptSessionData: vi.fn((data) => ({
@@ -56,6 +56,13 @@ function makeVaultStore({ unlocked = true } = {}) {
     decryptSessionData: vi.fn((blob) =>
       JSON.parse(Buffer.from(blob.ciphertext, 'base64').toString('utf8')),
     ),
+    readEnvelope: vi.fn(() => ({
+      iv: 'aXY=',
+      authTag: 'dGFn',
+      ciphertext: 'x',
+    })),
+    decryptWithSession: vi.fn(() => payload),
+    save: vi.fn((p) => p),
   };
 }
 
@@ -377,5 +384,166 @@ describe('supabase-cloud open/upload (S3/S5 row sync)', () => {
       true,
     );
     void c;
+  });
+});
+
+describe('supabase-cloud verifier corrections (B1/B2/B3)', () => {
+  const localPayload = {
+    version: '1.0.0',
+    salt,
+    updatedAt: '2026-01-02T00:00:00.000Z',
+    items: [
+      {
+        id: '11111111-2222-3333-4444-555555555555',
+        title: 'Local GitHub',
+        secret: 'local-secret',
+        updatedAt: '2026-01-02T00:00:00.000Z',
+      },
+    ],
+  };
+
+  async function setup(rows = []) {
+    const config = makeConfig();
+    const vaultStore = makeVaultStore({ payload: localPayload });
+    const sqlFactory = makeSqlFactory({ rows, saltValue: salt });
+    const cloud = createSupabaseCloud({
+      config,
+      vaultStore,
+      createSqlClient: sqlFactory.createSqlClient,
+    });
+    await cloud.connect(credentials);
+    return { cloud, config, vaultStore, sqlFactory };
+  }
+
+  it('B1: does not soft-delete a peer row this client never pulled', async () => {
+    const { encryptRow } = await import('./row-crypto.js');
+    const peerItem = {
+      id: '33333333-4444-5555-6666-777777777777',
+      title: 'Peer only',
+      secret: 'peer-secret',
+      updatedAt: '2026-01-01T00:00:00.000Z',
+    };
+    const peerRow = encryptRow(peerItem, key);
+    // First open sees only the local seed (no peer row yet).
+    const { cloud, sqlFactory } = await setup();
+    await cloud.open(localPayload, master);
+
+    // Peer row appears after our open — never in knownRemoteIds.
+    sqlFactory.state.rows.push({
+      id: peerItem.id,
+      iv: peerRow.iv,
+      auth_tag: peerRow.authTag,
+      ciphertext: peerRow.ciphertext,
+      updated_at: peerItem.updatedAt,
+      deleted_at: null,
+    });
+
+    const result = await cloud.uploadAfterSave(localPayload);
+    expect(result.uploaded).toBe(true);
+    const peer = sqlFactory.state.rows.find((r) => r.id === peerItem.id);
+    expect(peer.deleted_at).toBeNull();
+  });
+
+  it('B1: soft-deletes a known row the local payload intentionally dropped', async () => {
+    const { encryptRow } = await import('./row-crypto.js');
+    const knownItem = {
+      id: '44444444-5555-6666-7777-888888888888',
+      title: 'Was shared',
+      secret: 'was-shared',
+      updatedAt: '2026-01-01T00:00:00.000Z',
+    };
+    const knownRow = encryptRow(knownItem, key);
+    const { cloud, sqlFactory } = await setup([
+      {
+        id: knownItem.id,
+        iv: knownRow.iv,
+        auth_tag: knownRow.authTag,
+        ciphertext: knownRow.ciphertext,
+        updated_at: knownItem.updatedAt,
+        deleted_at: null,
+      },
+    ]);
+    // open pulls the known row into knownRemoteIds (merged with local).
+    await cloud.open(localPayload, master);
+
+    // Local now drops it (user deleted) and is newer than the remote row.
+    const afterDelete = {
+      ...localPayload,
+      items: localPayload.items,
+      updatedAt: '2026-06-01T00:00:00.000Z',
+    };
+    const result = await cloud.uploadAfterSave(afterDelete);
+    expect(result.uploaded).toBe(true);
+    const known = sqlFactory.state.rows.find((r) => r.id === knownItem.id);
+    expect(known.deleted_at).toBeTruthy();
+  });
+
+  it('B2: one undecryptable row does not abort the pull', async () => {
+    const { encryptRow } = await import('./row-crypto.js');
+    const goodItem = {
+      id: '55555555-6666-7777-8888-999999999999',
+      title: 'Readable',
+      secret: 'ok',
+      updatedAt: '2026-01-01T00:00:00.000Z',
+    };
+    const goodRow = encryptRow(goodItem, key);
+    const { cloud } = await setup([
+      {
+        id: 'aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee',
+        iv: 'aXY=',
+        auth_tag: 'dGFn',
+        // Valid base64 that fails GCM auth under this key.
+        ciphertext: Buffer.from('not-encrypted-by-this-key').toString('base64'),
+        updated_at: '2026-01-01T00:00:00.000Z',
+        deleted_at: null,
+      },
+      {
+        id: goodItem.id,
+        iv: goodRow.iv,
+        auth_tag: goodRow.authTag,
+        ciphertext: goodRow.ciphertext,
+        updated_at: goodItem.updatedAt,
+        deleted_at: null,
+      },
+    ]);
+    const result = await cloud.open(localPayload, master);
+    expect(result.action).not.toBe('offline');
+    expect(result.payload.items.map((i) => i.id)).toContain(goodItem.id);
+    expect(result.payload.items.map((i) => i.id)).toContain(
+      localPayload.items[0].id,
+    );
+  });
+
+  it('B3: connect with masterPassword bootstraps import and verifies lineage', async () => {
+    const config = makeConfig();
+    const vaultStore = makeVaultStore({ payload: localPayload });
+    const sqlFactory = makeSqlFactory({ rows: [], saltValue: salt });
+    const cloud = createSupabaseCloud({
+      config,
+      vaultStore,
+      createSqlClient: sqlFactory.createSqlClient,
+    });
+    await cloud.connect(credentials, { masterPassword: master });
+    expect(sqlFactory.state.rows).toHaveLength(1);
+    expect(sqlFactory.state.rows[0].ciphertext).not.toContain('local-secret');
+
+    // Save must not refuse with lineage-unverified after connect.
+    const result = await cloud.uploadAfterSave(localPayload);
+    expect(result.uploaded).toBe(true);
+    expect(result.reason).toBeUndefined();
+  });
+
+  it('B3: connect without masterPassword still succeeds (next open bootstraps)', async () => {
+    const config = makeConfig();
+    const vaultStore = makeVaultStore({ payload: localPayload });
+    const sqlFactory = makeSqlFactory({ rows: [], saltValue: salt });
+    const cloud = createSupabaseCloud({
+      config,
+      vaultStore,
+      createSqlClient: sqlFactory.createSqlClient,
+    });
+    const result = await cloud.connect(credentials);
+    expect(result).toEqual({ connected: true });
+    expect(config.getStatus().connected).toBe(true);
   });
 });
