@@ -1,5 +1,9 @@
 <script setup>
-import { computed, ref } from 'vue';
+import { computed, nextTick, onMounted, ref } from 'vue';
+import AppIcon from './ui/AppIcon.vue';
+import BrandMark from './ui/BrandMark.vue';
+import StrengthMeter from './ui/StrengthMeter.vue';
+import { estimateStrength } from '../lib/security-audit.js';
 
 const props = defineProps({
   mode: {
@@ -14,25 +18,40 @@ const password = ref('');
 const confirmation = ref('');
 const error = ref('');
 const busy = ref(false);
+const revealed = ref(false);
+const capsLock = ref(false);
+const passwordInput = ref(null);
 
 const isCreate = computed(() => props.mode === 'create');
+const strength = computed(() => estimateStrength(password.value));
+
+onMounted(async () => {
+  await nextTick();
+  passwordInput.value?.focus();
+});
+
+function syncCapsLock(event) {
+  if (typeof event.getModifierState === 'function') {
+    capsLock.value = event.getModifierState('CapsLock');
+  }
+}
 
 async function submit() {
   error.value = '';
 
   if (isCreate.value) {
     if (password.value.length < 8) {
-      error.value = 'Master password must be at least 8 characters.';
+      error.value = 'La contraseña maestra debe tener al menos 8 caracteres.';
       return;
     }
     if (password.value !== confirmation.value) {
-      error.value = 'Passwords do not match.';
+      error.value = 'Las contraseñas no coinciden.';
       return;
     }
   }
 
   if (!password.value) {
-    error.value = 'Enter your master password.';
+    error.value = 'Introduce tu contraseña maestra.';
     return;
   }
 
@@ -43,7 +62,7 @@ async function submit() {
       : await window.passbox.vaultUnlock(password.value);
     emit('authenticated', payload);
   } catch {
-    error.value = 'Wrong master password.';
+    error.value = 'Contraseña maestra incorrecta.';
   } finally {
     busy.value = false;
     password.value = '';
@@ -53,52 +72,146 @@ async function submit() {
 </script>
 
 <template>
-  <div class="min-h-screen bg-neutral-50 flex items-center justify-center p-4">
-    <form
-      class="w-full max-w-sm rounded-xl border border-neutral-200 bg-white p-6 shadow-sm"
-      @submit.prevent="submit"
-    >
-      <h1 class="text-lg font-semibold text-neutral-900">Passbox</h1>
-      <p class="mt-1 text-sm text-neutral-500">
-        {{
-          isCreate
-            ? 'Create a master password to initialize your vault.'
-            : 'Enter your master password to unlock.'
-        }}
-      </p>
+  <div
+    class="relative grid min-h-screen place-items-center overflow-hidden p-5"
+  >
+    <div
+      aria-hidden="true"
+      class="pointer-events-none absolute inset-x-0 top-0 h-px bg-line"
+    />
 
-      <label class="mt-4 block">
-        <span class="text-xs font-medium text-neutral-600"
-          >Master password</span
+    <div class="animate-rise relative w-full max-w-[380px]">
+      <div class="flex flex-col items-center text-center">
+        <span
+          class="grid size-12 place-items-center rounded-[14px] bg-ink text-canvas shadow-card"
         >
-        <input
-          v-model="password"
-          type="password"
-          autofocus
-          autocomplete="off"
-          class="mt-1 w-full rounded-lg border border-neutral-200 px-3 py-2 text-sm outline-none focus:border-neutral-400"
-        />
-      </label>
+          <BrandMark :size="26" />
+        </span>
+        <h1 class="mt-4 text-[19px] font-semibold tracking-[-0.02em] text-ink">
+          Passbox
+        </h1>
+        <p class="mt-1 text-[12.5px] text-muted">
+          Tu bóveda, cifrada en este dispositivo.
+        </p>
+      </div>
 
-      <label v-if="isCreate" class="mt-3 block">
-        <span class="text-xs font-medium text-neutral-600">Confirm</span>
-        <input
-          v-model="confirmation"
-          type="password"
-          autocomplete="off"
-          class="mt-1 w-full rounded-lg border border-neutral-200 px-3 py-2 text-sm outline-none focus:border-neutral-400"
-        />
-      </label>
-
-      <p v-if="error" class="mt-3 text-xs text-red-600">{{ error }}</p>
-
-      <button
-        type="submit"
-        :disabled="busy"
-        class="mt-5 w-full rounded-lg bg-neutral-900 px-4 py-2 text-sm font-medium text-white hover:bg-neutral-700 disabled:opacity-50"
+      <form
+        class="card mt-6 p-5 shadow-card"
+        novalidate
+        @submit.prevent="submit"
       >
-        {{ busy ? 'Working…' : isCreate ? 'Create vault' : 'Unlock' }}
-      </button>
-    </form>
+        <div>
+          <h2 class="text-[14px] font-semibold tracking-tight text-ink">
+            {{ isCreate ? 'Crea tu bóveda' : 'Desbloquea tu bóveda' }}
+          </h2>
+          <p class="mt-1 text-[12px] leading-relaxed text-muted">
+            {{
+              isCreate
+                ? 'Elige una contraseña maestra. No se almacena y nunca sale de este dispositivo.'
+                : 'Introduce tu contraseña maestra para descifrar tus credenciales.'
+            }}
+          </p>
+        </div>
+
+        <div class="mt-5">
+          <label for="master-password" class="label">Contraseña maestra</label>
+          <div class="relative mt-1.5">
+            <input
+              id="master-password"
+              ref="passwordInput"
+              v-model="password"
+              :type="revealed ? 'text' : 'password'"
+              autocomplete="off"
+              autocapitalize="off"
+              spellcheck="false"
+              :aria-invalid="Boolean(error)"
+              :aria-describedby="error ? 'unlock-error' : undefined"
+              class="field pr-10"
+              @keydown="syncCapsLock"
+              @keyup="syncCapsLock"
+              @input="syncCapsLock"
+            />
+            <button
+              type="button"
+              class="row-action absolute top-1/2 right-1.5 -translate-y-1/2"
+              :aria-label="
+                revealed ? 'Ocultar contraseña' : 'Mostrar contraseña'
+              "
+              :aria-pressed="revealed"
+              @click="revealed = !revealed"
+            >
+              <AppIcon :name="revealed ? 'eyeOff' : 'eye'" :size="15" />
+            </button>
+          </div>
+        </div>
+
+        <div v-if="isCreate" class="mt-3.5">
+          <label for="master-confirmation" class="label"
+            >Confirmar contraseña</label
+          >
+          <input
+            id="master-confirmation"
+            v-model="confirmation"
+            :type="revealed ? 'text' : 'password'"
+            autocomplete="off"
+            autocapitalize="off"
+            spellcheck="false"
+            class="field mt-1.5"
+            @keydown="syncCapsLock"
+            @keyup="syncCapsLock"
+          />
+        </div>
+
+        <div v-if="isCreate && password" class="mt-3">
+          <StrengthMeter :score="strength.score" />
+          <p class="hint mt-1.5">
+            Usa al menos 8 caracteres. Una frase de paso más larga es más
+            fuerte.
+          </p>
+        </div>
+
+        <p
+          v-if="capsLock"
+          class="mt-3 flex items-center gap-1.5 text-[11.5px] font-medium text-warn"
+        >
+          <AppIcon name="alert" :size="12" />
+          Bloq Mayús está activado.
+        </p>
+
+        <p
+          v-if="error"
+          id="unlock-error"
+          role="alert"
+          class="mt-3 flex items-start gap-1.5 rounded-lg bg-danger-soft px-2.5 py-2 text-[11.5px] leading-relaxed font-medium text-danger"
+        >
+          <AppIcon name="alert" :size="12" class="mt-px shrink-0" />
+          {{ error }}
+        </p>
+
+        <button
+          type="submit"
+          :disabled="busy"
+          class="btn btn-primary btn-lg mt-5 w-full"
+        >
+          <AppIcon v-if="busy" name="refresh" :size="14" class="animate-spin" />
+          {{
+            busy
+              ? isCreate
+                ? 'Creando bóveda…'
+                : 'Desbloqueando…'
+              : isCreate
+                ? 'Crear bóveda'
+                : 'Desbloquear'
+          }}
+        </button>
+      </form>
+
+      <p
+        class="mt-5 flex items-center justify-center gap-1.5 text-[11px] text-faint"
+      >
+        <AppIcon name="lock" :size="11" />
+        Conocimiento cero: tu contraseña maestra nunca se almacena.
+      </p>
+    </div>
   </div>
 </template>

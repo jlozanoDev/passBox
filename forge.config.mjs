@@ -9,6 +9,9 @@ import { FuseV1Options, FuseVersion } from '@electron/fuses';
 const config = {
   packagerConfig: {
     asar: true,
+    // Original application icon: assets/icon.svg is the source of truth and
+    // `npm run icons` regenerates the platform files it points at.
+    icon: 'assets/icons/icon',
   },
   rebuildConfig: {},
   makers: [

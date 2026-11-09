@@ -1,5 +1,6 @@
 <script setup>
 import { computed, onMounted, ref } from 'vue';
+import AppIcon from './ui/AppIcon.vue';
 
 const emit = defineEmits(['changed']);
 
@@ -30,21 +31,21 @@ const syncState = computed(() => {
   const entry = lastSync.value;
   if (!entry) return null;
   const { ok, error: reason, at } = entry;
-  const when = new Date(at).toLocaleString();
-  if (ok) return { tone: 'ok', text: `Last sync: ${when}` };
+  const when = new Date(at).toLocaleString('es-ES');
+  if (ok) return { tone: 'ok', text: `Última sincronización: ${when}` };
   if (reason === 'remote-newer') {
     return {
       tone: 'warn',
-      text: 'Cloud has newer changes — they merge when you reopen Passbox.',
+      text: 'Hay cambios más recientes en la nube; se fusionarán al volver a abrir Passbox.',
     };
   }
   if (reason === 'lineage-unverified') {
     return {
       tone: 'warn',
-      text: 'Sync resumes after the next successful check on open.',
+      text: 'La sincronización se reanudará tras la próxima comprobación correcta al abrir.',
     };
   }
-  return { tone: 'warn', text: `Last sync failed (${when}).` };
+  return { tone: 'warn', text: `La última sincronización falló (${when}).` };
 });
 
 onMounted(refresh);
@@ -61,11 +62,11 @@ async function connect() {
     // Connection string lives encrypted at rest from here on — drop it
     // from renderer memory immediately.
     databaseUrl.value = '';
-    message.value = 'Cloud sync connected. Schema is ready.';
+    message.value = 'Sincronización conectada. El esquema está listo.';
     await refresh();
     emit('changed');
   } catch (err) {
-    error.value = err?.message ?? 'Connection failed.';
+    error.value = err?.message ?? 'No se pudo conectar.';
   } finally {
     busy.value = false;
   }
@@ -75,91 +76,136 @@ async function disconnect() {
   error.value = '';
   message.value = '';
   await window.passbox.cloudDisconnect();
-  message.value = 'Disconnected.';
+  message.value = 'Desconectada.';
   await refresh();
   emit('changed');
 }
 </script>
 
 <template>
-  <section class="rounded-xl border border-neutral-200 bg-white p-4">
-    <div class="flex items-center justify-between">
-      <div>
-        <h2 class="text-sm font-semibold text-neutral-900">Cloud sync</h2>
-        <p class="mt-0.5 text-xs text-neutral-500">
-          {{
-            status.connected
-              ? 'Secrets are synced as encrypted rows in Supabase.'
-              : 'Supabase project URL and session-pooler connection string.'
-          }}
-        </p>
+  <section>
+    <div class="flex items-start justify-between gap-3">
+      <div class="flex items-start gap-3">
+        <span
+          class="grid size-9 shrink-0 place-items-center rounded-lg border border-line bg-raised text-muted"
+        >
+          <AppIcon name="cloud" :size="16" />
+        </span>
+        <div>
+          <h2 class="panel-title">Sincronización en la nube</h2>
+          <p class="mt-0.5 max-w-sm text-[11.5px] leading-relaxed text-faint">
+            {{
+              status.connected
+                ? 'Los secretos se sincronizan como filas cifradas en Supabase.'
+                : 'URL del proyecto Supabase y cadena de conexión del session pooler.'
+            }}
+          </p>
+        </div>
       </div>
       <span
-        class="rounded-full px-2 py-0.5 text-xs font-medium"
+        class="inline-flex shrink-0 items-center gap-1.5 rounded-full px-2.5 py-1 text-[11px] font-medium"
         :class="
-          status.connected
-            ? 'bg-green-100 text-green-700'
-            : 'bg-neutral-200 text-neutral-600'
+          status.connected ? 'bg-ok-soft text-ok' : 'bg-sunken text-muted'
         "
       >
-        {{ status.connected ? 'Connected' : 'Not connected' }}
+        <span
+          class="size-1.5 rounded-full"
+          :class="status.connected ? 'bg-ok' : 'bg-faint'"
+        />
+        {{ status.connected ? 'Conectada' : 'Sin conectar' }}
       </span>
     </div>
 
     <p
       v-if="status.connected && syncState"
-      class="mt-2 text-xs"
-      :class="syncState.tone === 'ok' ? 'text-neutral-500' : 'text-amber-600'"
+      class="mt-3 flex items-center gap-1.5 border-t border-line pt-3 text-[11.5px]"
+      :class="syncState.tone === 'ok' ? 'text-muted' : 'text-warn'"
     >
+      <AppIcon
+        :name="syncState.tone === 'ok' ? 'check' : 'alert'"
+        :size="12"
+        class="shrink-0"
+      />
       {{ syncState.text }}
     </p>
 
     <form
       v-if="!status.connected"
-      class="mt-3 space-y-2"
+      class="mt-4 space-y-3 border-t border-line pt-4"
       @submit.prevent="connect"
     >
-      <input
-        v-model="projectUrl"
-        required
-        placeholder="Project URL (https://xxxx.supabase.co)"
-        class="w-full rounded-lg border border-neutral-200 px-3 py-2 text-sm outline-none focus:border-neutral-400"
-      />
-      <input
-        v-model="databaseUrl"
-        required
-        type="password"
-        placeholder="Connection string (session pooler)"
-        class="w-full rounded-lg border border-neutral-200 px-3 py-2 text-sm outline-none focus:border-neutral-400"
-      />
-      <button
-        type="submit"
-        :disabled="busy"
-        class="w-full rounded-lg bg-neutral-900 px-3 py-2 text-sm font-medium text-white hover:bg-neutral-700 disabled:opacity-50"
-      >
-        {{ busy ? 'Connecting…' : 'Connect' }}
+      <div>
+        <label for="cloud-project-url" class="label">URL del proyecto</label>
+        <input
+          id="cloud-project-url"
+          v-model="projectUrl"
+          required
+          placeholder="https://xxxx.supabase.co"
+          autocomplete="off"
+          spellcheck="false"
+          class="field mt-1.5"
+        />
+      </div>
+      <div>
+        <label for="cloud-database-url" class="label">
+          Cadena de conexión
+        </label>
+        <input
+          id="cloud-database-url"
+          v-model="databaseUrl"
+          required
+          type="password"
+          placeholder="Cadena de conexión del session pooler"
+          autocomplete="off"
+          spellcheck="false"
+          class="field mt-1.5 font-mono text-[12px]"
+        />
+      </div>
+      <button type="submit" :disabled="busy" class="btn btn-secondary w-full">
+        <AppIcon v-if="busy" name="refresh" :size="13" class="animate-spin" />
+        {{ busy ? 'Conectando…' : 'Conectar sincronización' }}
       </button>
-      <p class="text-xs text-neutral-400">
-        The connection string is encrypted with your vault key before storage.
-        Secret values are encrypted on this device — Supabase only ever stores
-        ciphertext.
+      <p class="hint">
+        La cadena de conexión se cifra con la clave de tu bóveda antes de
+        almacenarse. Los valores secretos se cifran en este dispositivo:
+        Supabase solo almacena texto cifrado.
       </p>
     </form>
 
-    <div v-else class="mt-3">
-      <p class="text-xs text-neutral-500">
+    <div v-else class="mt-4 border-t border-line pt-4">
+      <p class="label">Proyecto</p>
+      <p
+        class="mono mt-1.5 truncate rounded-lg bg-raised px-3 py-2 text-[11.5px] text-muted"
+      >
         {{ status.settings?.projectUrl }}
       </p>
       <button
         type="button"
-        class="mt-2 w-full rounded-lg border border-neutral-300 px-3 py-2 text-sm font-medium text-neutral-700 hover:bg-neutral-50"
+        class="btn btn-secondary mt-3 w-full"
         @click="disconnect"
       >
-        Disconnect
+        Desconectar
       </button>
+      <p class="hint mt-3">
+        Al desconectar se detienen las futuras sincronizaciones. El texto
+        cifrado ya almacenado en Supabase permanece allí hasta que lo elimines.
+      </p>
     </div>
 
-    <p v-if="message" class="mt-2 text-xs text-green-600">{{ message }}</p>
-    <p v-if="error" class="mt-2 text-xs text-red-600">{{ error }}</p>
+    <p
+      v-if="message"
+      class="mt-3 flex items-center gap-1.5 text-[11.5px] font-medium text-ok"
+    >
+      <AppIcon name="check" :size="12" />
+      {{ message }}
+    </p>
+    <p
+      v-if="error"
+      role="alert"
+      class="mt-3 flex items-start gap-1.5 rounded-lg bg-danger-soft px-3 py-2 text-[11.5px] leading-relaxed font-medium text-danger"
+    >
+      <AppIcon name="alert" :size="12" class="mt-px shrink-0" />
+      {{ error }}
+    </p>
   </section>
 </template>

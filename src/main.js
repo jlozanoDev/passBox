@@ -1,7 +1,9 @@
-import { app, BrowserWindow, ipcMain } from 'electron';
+import { app, BrowserWindow, clipboard, ipcMain } from 'electron';
+import { existsSync } from 'node:fs';
 import path from 'node:path';
 import started from 'electron-squirrel-startup';
 import { createVaultStore } from './main/vault-store.js';
+import { createClipboardService } from './main/clipboard.js';
 import { createSupabaseConfig } from './main/supabase-config.js';
 import { createSupabaseCloud } from './main/supabase-cloud.js';
 
@@ -24,9 +26,17 @@ let cloudConfig = null;
 let sessionMasterPassword = null;
 
 const createWindow = () => {
+  // The packaged exe carries assets/icons/icon.ico; the window icon covers
+  // dev runs and Linux, where the window may not inherit the exe icon.
+  const appIcon = path.join(app.getAppPath(), 'assets', 'icons', 'icon.png');
+
   const mainWindow = new BrowserWindow({
-    width: 900,
-    height: 700,
+    // S14: the shipped default shows the full index (>= 1024px) layout.
+    width: 1120,
+    height: 760,
+    minWidth: 760,
+    minHeight: 560,
+    ...(existsSync(appIcon) ? { icon: appIcon } : {}),
     webPreferences: {
       preload: path.join(__dirname, 'preload.cjs'),
     },
@@ -98,6 +108,15 @@ ipcMain.handle('cloud:disconnect', () => {
   cloudService.disconnect();
 });
 
+// Clipboard surface (S10): secrets are copied here so the renderer never
+// needs an insecure-origin clipboard permission. The fingerprint/clear
+// policy lives in ./main/clipboard.js so it stays unit-testable.
+const clipboardService = createClipboardService({ clipboard });
+
+ipcMain.handle('clipboard:copy', (_event, text, options = {}) =>
+  clipboardService.copy(text, options),
+);
+
 // Sync/conflict surface: last sync outcome + diagnostics.
 ipcMain.handle('cloud:sync-status', () => ({
   cloud: cloudService.status(),
@@ -124,6 +143,7 @@ app.whenReady().then(() => {
 app.on('before-quit', () => {
   vaultStore?.lock();
   sessionMasterPassword = null;
+  clipboardService.flush();
 });
 
 app.on('window-all-closed', () => {
