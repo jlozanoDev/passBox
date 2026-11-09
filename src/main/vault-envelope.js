@@ -1,8 +1,7 @@
 /**
  * Shared vault wire envelope (v1.0 S10): the {salt, iv, authTag,
- * ciphertext} shape that crosses disk and network boundaries. The S3
- * transport gates on this shape so plaintext can never leave the
- * crypto layer (S6/S2).
+ * ciphertext} shape that crosses the disk boundary for the local vault
+ * file. Cloud rows use the per-row envelope in row-crypto.js (S2).
  */
 
 export const VAULT_FILE_NAME = 'passbox.vault';

@@ -9,11 +9,9 @@ const status = ref({
   settings: null,
 });
 const lastSync = ref(null);
-const endpoint = ref('');
-const region = ref('');
-const bucket = ref('');
-const accessKeyId = ref('');
-const secretAccessKey = ref('');
+const projectUrl = ref('');
+const serviceKey = ref('');
+const databaseUrl = ref('');
 const busy = ref(false);
 const message = ref('');
 const error = ref('');
@@ -23,16 +21,12 @@ async function refresh() {
   status.value = current;
   if (current.settings) {
     // Prefill non-secret fields only — the secret never round-trips.
-    endpoint.value = current.settings.endpoint;
-    region.value = current.settings.region;
-    bucket.value = current.settings.bucket;
-    accessKeyId.value = current.settings.accessKeyId;
+    projectUrl.value = current.settings.projectUrl ?? '';
   }
   lastSync.value = (await window.passbox.cloudSyncStatus()).lastSync;
 }
 
-// Map recorded sync reasons to plain-language states (T8: conflict
-// visibility — arbitration itself runs in sync.js, Log L8/L9).
+// Map recorded sync reasons to plain-language states.
 const syncState = computed(() => {
   const entry = lastSync.value;
   if (!entry) return null;
@@ -43,12 +37,6 @@ const syncState = computed(() => {
     return {
       tone: 'warn',
       text: 'Cloud has newer changes — they merge when you reopen Passbox.',
-    };
-  }
-  if (reason === 'incompatible-vault' || reason === 'lineage-changed') {
-    return {
-      tone: 'warn',
-      text: 'Sync paused: the cloud vault does not match this master password.',
     };
   }
   if (reason === 'lineage-unverified') {
@@ -68,16 +56,15 @@ async function connect() {
   busy.value = true;
   try {
     await window.passbox.cloudConnect({
-      endpoint: endpoint.value.trim(),
-      region: region.value.trim(),
-      bucket: bucket.value.trim(),
-      accessKeyId: accessKeyId.value.trim(),
-      secretAccessKey: secretAccessKey.value.trim(),
+      projectUrl: projectUrl.value.trim(),
+      serviceKey: serviceKey.value.trim(),
+      databaseUrl: databaseUrl.value.trim(),
     });
-    // The secret lives encrypted at rest from here on — drop it from
+    // Secrets live encrypted at rest from here on — drop them from
     // renderer memory immediately.
-    secretAccessKey.value = '';
-    message.value = 'Cloud sync connected.';
+    serviceKey.value = '';
+    databaseUrl.value = '';
+    message.value = 'Cloud sync connected. Schema is ready.';
     await refresh();
     emit('changed');
   } catch (err) {
@@ -105,8 +92,8 @@ async function disconnect() {
         <p class="mt-0.5 text-xs text-neutral-500">
           {{
             status.connected
-              ? 'Vault sync is connected.'
-              : 'Any S3-compatible bucket (AWS, Backblaze B2, Cloudflare R2, MinIO…).'
+              ? 'Secrets are synced as encrypted rows in Supabase.'
+              : 'Supabase project URL, service key and connection string.'
           }}
         </p>
       </div>
@@ -136,34 +123,23 @@ async function disconnect() {
       @submit.prevent="connect"
     >
       <input
-        v-model="endpoint"
+        v-model="projectUrl"
         required
-        placeholder="Endpoint URL (https://s3.amazonaws.com)"
+        placeholder="Project URL (https://xxxx.supabase.co)"
         class="w-full rounded-lg border border-neutral-200 px-3 py-2 text-sm outline-none focus:border-neutral-400"
       />
       <input
-        v-model="region"
-        required
-        placeholder="Region (us-east-1, auto…)"
-        class="w-full rounded-lg border border-neutral-200 px-3 py-2 text-sm outline-none focus:border-neutral-400"
-      />
-      <input
-        v-model="bucket"
-        required
-        placeholder="Bucket"
-        class="w-full rounded-lg border border-neutral-200 px-3 py-2 text-sm outline-none focus:border-neutral-400"
-      />
-      <input
-        v-model="accessKeyId"
-        required
-        placeholder="Access key ID"
-        class="w-full rounded-lg border border-neutral-200 px-3 py-2 text-sm outline-none focus:border-neutral-400"
-      />
-      <input
-        v-model="secretAccessKey"
+        v-model="serviceKey"
         required
         type="password"
-        placeholder="Secret access key"
+        placeholder="Service role key"
+        class="w-full rounded-lg border border-neutral-200 px-3 py-2 text-sm outline-none focus:border-neutral-400"
+      />
+      <input
+        v-model="databaseUrl"
+        required
+        type="password"
+        placeholder="Connection string (session pooler)"
         class="w-full rounded-lg border border-neutral-200 px-3 py-2 text-sm outline-none focus:border-neutral-400"
       />
       <button
@@ -174,15 +150,14 @@ async function disconnect() {
         {{ busy ? 'Connecting…' : 'Connect' }}
       </button>
       <p class="text-xs text-neutral-400">
-        The secret key is encrypted with your vault key before it is stored —
-        the provider only ever sees your encrypted vault file.
+        Keys are encrypted with your vault key before storage. Secret values are
+        encrypted on this device — Supabase only ever stores ciphertext.
       </p>
     </form>
 
     <div v-else class="mt-3">
       <p class="text-xs text-neutral-500">
-        {{ status.settings?.endpoint }} · bucket
-        {{ status.settings?.bucket }}
+        {{ status.settings?.projectUrl }}
       </p>
       <button
         type="button"

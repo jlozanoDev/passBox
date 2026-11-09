@@ -68,7 +68,7 @@ Assumption (flagged): a machine that already has a local encrypted vault imports
 | T1  | S1, S4 | inline | done   | RED→GREEN 14 tests (supabase-config + supabase-migrate); `postgres` dep added |
 | T2  | S2, S3 | inline | done   | RED→GREEN 10 tests (row-crypto: shared salt, multi-client decrypt, wrong-password reject) |
 | T3  | S5, S8 | inline | done   | RED→GREEN 10 tests (salt bootstrap, list/upsert/soft-delete, import ciphertext-only); suite 107/107 |
-| T4  | S6, S7 | inline | todo   | —                 |
+| T4  | S6, S7 | inline | done   | RED→GREEN 12 tests (supabase-cloud connect/open/upload); S3 modules removed; suite 67/67 |
 | T5  | all    | inline | todo   | —                 |
 
 Route evidence: units are sequential (crypto before CRUD, CRUD before rewire); no parallel-writer reason; parent writes inline following this logbook.

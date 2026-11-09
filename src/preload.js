@@ -14,7 +14,5 @@ contextBridge.exposeInMainWorld('passbox', {
   cloudStatus: () => ipcRenderer.invoke('cloud:status'),
   cloudConnect: (settings) => ipcRenderer.invoke('cloud:connect', settings),
   cloudDisconnect: () => ipcRenderer.invoke('cloud:disconnect'),
-  cloudUpload: () => ipcRenderer.invoke('cloud:upload'),
-  cloudDownload: () => ipcRenderer.invoke('cloud:download'),
   cloudSyncStatus: () => ipcRenderer.invoke('cloud:sync-status'),
 });

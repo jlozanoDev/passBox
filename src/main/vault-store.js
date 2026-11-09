@@ -126,7 +126,7 @@ export function createVaultStore(baseDir) {
     },
 
     /**
-     * Encrypt an auxiliary secret (e.g. the Drive refresh token) with
+     * Encrypt an auxiliary secret (e.g. the Supabase service key) with
      * the session key so it reaches disk only as ciphertext (S5).
      * @param {object} data
      * @returns {{iv: string, authTag: string, ciphertext: string}}
