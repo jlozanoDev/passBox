@@ -204,6 +204,33 @@ describe('supabase-cloud connect (S1/S4/S6)', () => {
     expect(config.setSecretBlobs).not.toHaveBeenCalled();
   });
 
+  it('maps the Supavisor tenant/user error to a copy-the-whole-string hint', async () => {
+    sqlFactory.createSqlClient = vi.fn(() => {
+      const sql = vi.fn();
+      sql.unsafe = vi.fn(() =>
+        Promise.reject(
+          new Error(
+            '(ENOTFOUND) tenant/user postgres.qeciqkkigaasotowexui not found',
+          ),
+        ),
+      );
+      sql.end = vi.fn(() => Promise.resolve());
+      return sql;
+    });
+    const cloud = createSupabaseCloud({
+      config,
+      vaultStore,
+      createSqlClient: sqlFactory.createSqlClient,
+    });
+    await expect(
+      cloud.connect({
+        projectUrl: credentials.projectUrl,
+        databaseUrl: credentials.databaseUrl,
+      }),
+    ).rejects.toThrow(/copy the ENTIRE connection string/i);
+    expect(config.setSecretBlobs).not.toHaveBeenCalled();
+  });
+
   it('connects with projectUrl + databaseUrl only — no service key (A1)', async () => {
     const cloud = createSupabaseCloud({
       config,
