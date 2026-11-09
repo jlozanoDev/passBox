@@ -161,6 +161,21 @@ export function createSupabaseCloud({
       const sql = createClient(databaseUrl.trim());
       try {
         await sql.unsafe(MIGRATION_SQL);
+      } catch (err) {
+        const message = String(err?.message ?? err);
+        // Direct host (db.<ref>.supabase.co) is IPv6-only without the
+        // paid add-on — the usual ENOTFOUND on IPv4 networks.
+        if (/ENOTFOUND|EAI_AGAIN/i.test(message)) {
+          if (/db\.[^.]+\.supabase\.co/i.test(databaseUrl)) {
+            throw new Error(
+              'Cannot resolve the direct database host (IPv6-only on free plans). In Supabase Dashboard → Connect → Session pooler, copy the URI that contains ".pooler.supabase.com" (port 5432) and paste that instead.',
+            );
+          }
+          throw new Error(
+            `Cannot reach the database host — check the connection string host and your network (${message})`,
+          );
+        }
+        throw err;
       } finally {
         await sql.end?.();
       }

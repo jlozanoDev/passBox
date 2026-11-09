@@ -178,6 +178,32 @@ describe('supabase-cloud connect (S1/S4/S6)', () => {
     expect(config.setSecretBlobs).not.toHaveBeenCalled();
   });
 
+  it('maps ENOTFOUND on a direct db.* host to a session-pooler hint', async () => {
+    sqlFactory.createSqlClient = vi.fn(() => {
+      const sql = vi.fn();
+      sql.unsafe = vi.fn(() =>
+        Promise.reject(
+          new Error('getaddrinfo ENOTFOUND db.abcdefgh.supabase.co'),
+        ),
+      );
+      sql.end = vi.fn(() => Promise.resolve());
+      return sql;
+    });
+    const cloud = createSupabaseCloud({
+      config,
+      vaultStore,
+      createSqlClient: sqlFactory.createSqlClient,
+    });
+    await expect(
+      cloud.connect({
+        projectUrl: credentials.projectUrl,
+        databaseUrl:
+          'postgresql://postgres:pw@db.abcdefgh.supabase.co:5432/postgres',
+      }),
+    ).rejects.toThrow(/Session pooler/i);
+    expect(config.setSecretBlobs).not.toHaveBeenCalled();
+  });
+
   it('connects with projectUrl + databaseUrl only — no service key (A1)', async () => {
     const cloud = createSupabaseCloud({
       config,
