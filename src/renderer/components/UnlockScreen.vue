@@ -91,7 +91,7 @@ async function submit() {
           Passbox
         </h1>
         <p class="mt-1 text-[12.5px] text-muted">
-          Tu bóveda, cifrada en este dispositivo.
+          Tu bóveda de contraseñas, cifradas en este dispositivo.
         </p>
       </div>
 
