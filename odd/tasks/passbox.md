@@ -1,0 +1,222 @@
+# Passbox — Feature Document
+
+> **Status note (2026-10-31):** v1.0 is closed. Specs S5, S8 and the cloud-client clause of S11 below are superseded by the S3 backend feature — see `odd/tasks/passbox-s3-backend.md` (Google Drive replaced by a generic S3-compatible transport; user request: "Definitivamente lo hacemos para S3"). All other specs remain the record for v1.0 behavior.
+
+Objective: Build Passbox v1.0, a local-first, zero-knowledge Electron desktop password/secret manager that syncs an encrypted vault through the user's personal Google Drive (`appDataFolder`).
+Branch: `feature/passbox-core` (from `main`). Delivery: work-unit commits on the feature branch; push/PR remain human-owned. Test runner: `vitest` (unit) + `npm run build` (Vite/Forge type/build gate).
+
+## Specs
+
+### S1 — Master password (RF-01)
+
+User requirement, verbatim:
+
+> "El sistema debe requerir una Contraseña Maestra en el primer arranque para inicializar el almacén, o en cada inicio de sesión posterior para descifrarlo."
+> "La contraseña maestra nunca debe almacenarse en disco, base de datos ni enviarse por la red."
+
+Acceptance: first launch prompts to create the master password (with confirmation); later launches prompt to unlock; the password exists only in process memory during a session and is never written to disk or sent over any network.
+
+### S2 — Local encrypted vault (RF-02)
+
+> "Todos los secretos deben residir en un único archivo cifrado local (passbox.vault)."
+
+Acceptance: exactly one local file `passbox.vault` holds all secrets in encrypted form; no plaintext secret ever touches disk.
+
+### S3 — Automatic cloud sync (RF-03)
+
+> "Al abrir la app, se debe comprobar si existe una versión más reciente del archivo en la nube y descargarla."
+> "Al realizar cualquier modificación (crear, editar, eliminar un secreto), el archivo cifrado debe subirse automáticamente a la nube."
+
+Acceptance: on app open the cloud copy is checked and downloaded when newer; every mutation (create/edit/delete) triggers an automatic upload of the encrypted file.
+
+### S4 — Secret CRUD (RF-04)
+
+> "Capacidad de añadir, listar, editar y eliminar entradas estructuradas (Título, Usuario/Identificador, Valor/Secreto, Categoría, Notas, Fecha de modificación)."
+
+Acceptance: create, list, edit and delete entries with the fields Título, Usuario/Identificador, Valor/Secreto, Categoría, Notas, Fecha de modificación.
+
+### S5 — Google authentication (RF-05)
+
+> "Flujo de autenticación OAuth 2.0 seguro para vincular la cuenta de Google del usuario mediante un servidor loopback local."
+
+Amended by user (Log L5): **bring-your-own credentials**. On first Drive connection the app prompts the user to paste their own Google OAuth Client ID + Client Secret (Google Cloud Console → Credentials → OAuth client ID type _Desktop app_). The app never ships developer credentials.
+
+Acceptance: OAuth 2.0 flow links the user's Google account via a local loopback server (`127.0.0.1`, any port); credentials are entered by the user in-app on first connect and stored via `electron-store`; scope is limited to `drive.appdata` (RNF-03); the refresh token is encrypted with the vault session key before persistence; `state` is validated on callback.
+
+### S6 — Confidentiality (RNF-01)
+
+> "Uso del algoritmo AES-256-GCM (Galois/Counter Mode), que garantiza tanto la cifrado de los datos como su integridad (autenticación)."
+
+Acceptance: all vault payloads are encrypted with AES-256-GCM (authenticated encryption; tampering is detected on decrypt).
+
+### S7 — Key derivation (RNF-02)
+
+> "Uso de PBKDF2 (con un mínimo de 100,000 iteraciones y un salt aleatorio de 16 bytes) para transformar la contraseña maestra en la clave de cifrado simétrica de 256 bits."
+
+Acceptance: PBKDF2 with ≥100,000 iterations, a random 16-byte salt, output key length 32 bytes (AES-256). Salt is generated once per vault and travels with the vault file.
+
+### S8 — Cloud isolation (RNF-03)
+
+> "El archivo en Google Drive debe residir estrictamente en el directorio oculto appDataFolder, impidiendo que el usuario lo modifique o borre por accidente desde la interfaz web de Drive."
+
+Acceptance: the Drive file is created/updated only inside `appDataFolder` (hidden from the normal Drive UI).
+
+### S9 — Memory hygiene (RNF-04)
+
+> "Limpiar o sobrescribir las variables en memoria RAM que contengan la clave maestra o los secretos al cerrar la sesión o bloquear la aplicación."
+
+Acceptance: on lock/close, master key material and decrypted secrets are overwritten/cleared from memory as far as Node.js allows (buffers zeroed, references dropped).
+
+### S10 — Vault schema
+
+Plaintext payload after decryption (verbatim from the spec):
+
+```json
+{
+  "version": "1.0.0",
+  "salt": "base64_encoded_salt_string",
+  "updatedAt": "2026-10-30T20:00:00.000Z",
+  "items": [
+    {
+      "id": "uuid-v4-string",
+      "title": "Stripe Production API Key",
+      "category": "api_token",
+      "username": "admin@project.com",
+      "secret": "sk_live_51M...",
+      "notes": "Usar solo en entornos productivos de pasarela de pagos.",
+      "createdAt": "2026-10-30T20:00:00.000Z",
+      "updatedAt": "2026-10-30T20:00:00.000Z"
+    }
+  ]
+}
+```
+
+Encrypted envelope on disk/network (verbatim):
+
+```json
+{
+  "iv": "base64_iv",
+  "authTag": "base64_tag",
+  "ciphertext": "base64_encrypted_payload"
+}
+```
+
+Assumption (engineering necessity, flagged): the `salt` field is inside the encrypted payload per the spec, but key derivation requires the salt _before_ decryption. Therefore the envelope carries `salt` alongside `iv`/`authTag`/`ciphertext` in plaintext (salt is public by design); the decrypted payload keeps the schema above unchanged. No user-visible behavior changes.
+
+### S11 — Stack (spec §6)
+
+> "Core de Escritorio: Electron (Node.js + Chromium)" · "Empaquetador: Vite + Electron Forge" · ~~"Frontend: React"~~ → **Frontend: Vue 3** (user override, see Log L2), "con Tailwind CSS para un diseño minimalista, plano y de tonos limpios" · "Criptografía: Módulo nativo crypto de Node.js (crypto.scrypt / crypto.pbkdf2 y crypto.createCipheriv)" · "Cliente Cloud: googleapis (Node SDK oficial para Google Drive API v3)" · "Almacenamiento Local en Caché: electron-store (para configuraciones no sensibles como preferencias de UI o estado de la última sincronización)."
+
+Acceptance: the implemented stack matches this list with **Vue 3** as the frontend framework (PBKDF2 is the mandated derivation per S7; `googleapis` for Drive; `electron-store` only for non-sensitive prefs).
+
+### S12 — Phases (spec §7)
+
+> "Fase 1: Configuración del Core y UI Base" · "Fase 2: Motor Criptográfico Local" · "Fase 3: Integración con Google Drive API" · "Fase 4: Sincronización y Pruebas"
+
+Acceptance: work proceeds in this order; each phase's artifacts are delivered and checked before the next. Fase 1 initializes the repository with Electron + Vite + **Vue** (user override, Log L2).
+
+## Tasks
+
+| ID  | Spec                          | Route  | Status | Commit / evidence                           |
+| --- | ----------------------------- | ------ | ------ | ------------------------------------------- |
+| T1  | S11, S12                      | inline | done   | 9b041a7                                     |
+| T2  | S12 (Fase 1), S4 (UI surface) | inline | done   | 3bb5721                                     |
+| T3  | S6, S7, S10                   | inline | done   | 3818cd9                                     |
+| T4  | S1, S2, S9, S10               | inline | done   | 5851671 (+fix 8c09012)                      |
+| T5  | S5                            | inline | done   | 7bef457                                     |
+| T6  | S8, S3 (upload/download)      | inline | done   | ecbcf24 (+fix 1d99142, verified)            |
+| T7  | S4, S3 (auto-sync)            | inline | done   | 94c6d1a (+fixes b5bf9a3, 5b55bdf, verified) |
+| T8  | S3 (conflicts by `updatedAt`) | inline | done   | 9082fd5                                     |
+| T9  | S12 (Fase 4 packaging)        | inline | done   | (docs commit; run evidence in L12)          |
+
+Notes on routes: all tasks are currently planned inline (small-to-medium understood changes in a greenfield repo; no writer trigger — no parallel independent units launched together and no context backstop reached). Re-evaluate if a task grows past the inline budget.
+
+## Log
+
+- L1 (user, 2026-10-30) — original request, verbatim:
+  "Aquí tienes el Documento de Especificaciones Técnicas Completo para Passbox, estructurado de forma profesional para que sirva como guía de desarrollo de principio a fin.
+
+  Documento de Especificaciones Técnicas: Passbox (v1.0)
+  1. Visión General del Proyecto
+     Passbox es una aplicación de escritorio multiplataforma (Windows, macOS, Linux) de código abierto y arquitectura Local-First, diseñada para almacenar y sincronizar de forma centralizada contraseñas, tokens de API y secretos de desarrollo utilizando el espacio en la nube personal del usuario (Google Drive / Google One) como un disco duro remoto "ciego".
+
+  2. Arquitectura del Sistema
+     La arquitectura sigue un modelo de Zero-Knowledge Architecture (Cifrado de Extremo a Extremo). Ni el proveedor cloud (Google) ni ningún intermediario tienen acceso a los datos en texto plano.
+
+  [ Electron Renderer (UI: React / Tailwind) ]
+  │ (IPC / ContextBridge)
+  ▼
+  [ Electron Main Process (Node.js) ]
+  ├── Módulo Criptográfico (AES-256-GCM + PBKDF2)
+  ├── Gestor de Sincronización Local (Cache temporal)
+  └── Cliente Cloud (Google Drive API - appDataFolder)
+  │
+  ▼
+  [ Nube Personal: passbox.vault (Cifrado Binario) ]
+
+  3. Requisitos Funcionales
+     RF-01: Gestión de Contraseña Maestra: El sistema debe requerir una Contraseña Maestra en el primer arranque para inicializar el almacén, o en cada inicio de sesión posterior para descifrarlo. La contraseña maestra nunca debe almacenarse en disco, base de datos ni enviarse por la red.
+     RF-02: Almacenamiento Local Cifrado (Vault): Todos los secretos deben residir en un único archivo cifrado local (passbox.vault).
+     RF-03: Sincronización Cloud Automática: Al abrir la app, se debe comprobar si existe una versión más reciente del archivo en la nube y descargarla. Al realizar cualquier modificación (crear, editar, eliminar un secreto), el archivo cifrado debe subirse automáticamente a la nube.
+     RF-04: CRUD de Secretos: Capacidad de añadir, listar, editar y eliminar entradas estructuradas (Título, Usuario/Identificador, Valor/Secreto, Categoría, Notas, Fecha de modificación).
+     RF-05: Autenticación con Google: Flujo de autenticación OAuth 2.0 seguro para vincular la cuenta de Google del usuario mediante un servidor loopback local.
+
+  4. Requisitos No Funcionales y Seguridad
+     RNF-01: Confidencialidad: Uso del algoritmo AES-256-GCM (Galois/Counter Mode), que garantiza tanto la cifrado de los datos como su integridad (autenticación).
+     RNF-02: Derivación de Claves: Uso de PBKDF2 (con un mínimo de 100,000 iteraciones y un salt aleatorio de 16 bytes) para transformar la contraseña maestra en la clave de cifrado simétrica de 256 bits.
+     RNF-03: Aislamiento en la Nube: El archivo en Google Drive debe residir estrictamente en el directorio oculto appDataFolder, impidiendo que el usuario lo modifique o borre por accidente desde la interfaz web de Drive.
+     RNF-04: Gestión de Memoria: Limpiar o sobrescribir las variables en memoria RAM que contengan la clave maestra o los secretos al cerrar la sesión o bloquear la aplicación.
+
+  5. Especificación del Formato de Datos (Vault Schema)
+     [JSON schema of passbox.vault plaintext payload: version 1.0.0, salt, updatedAt, items[] with id/title/category/username/secret/notes/createdAt/updatedAt — example item "Stripe Production API Key" / api_token / admin@project.com / sk_live_51M... / "Usar solo en entornos productivos de pasarela de pagos."]
+     [Encrypted envelope: iv, authTag, ciphertext — base64 fields.]
+
+  6. Stack Tecnológico
+     Core de Escritorio: Electron (Node.js + Chromium)
+     Empaquetador: Vite + Electron Forge
+     Frontend: React (con Tailwind CSS para un diseño minimalista, plano y de tonos limpios)
+     Criptografía: Módulo nativo crypto de Node.js (crypto.scrypt / crypto.pbkdf2 y crypto.createCipheriv)
+     Cliente Cloud: googleapis (Node SDK oficial para Google Drive API v3)
+     Almacenamiento Local en Caché: electron-store (para configuraciones no sensibles como preferencias de UI o estado de la última sincronización).
+
+  7. Plan de Fases de Desarrollo
+     Fase 1: Configuración del Core y UI Base — Inicializar el repositorio Electron + Vite + React. Diseñar la interfaz principal (lista de elementos, barra de búsqueda, modal de creación de secretos).
+     Fase 2: Motor Criptográfico Local — Implementar las funciones de derivación de clave (PBKDF2) y cifrado/descifrado simétrico (AES-256-GCM). Validar el flujo de la Contraseña Maestra en memoria.
+     Fase 3: Integración con Google Drive API — Configurar credenciales de API en Google Cloud Console (OAuth Client ID). Implementar el flujo de autenticación loopback en Electron. Programar las funciones de subida y descarga del archivo hacia el appDataFolder.
+     Fase 4: Sincronización y Pruebas — Gestión de conflictos básicos por marcas de tiempo (updatedAt). Pruebas multiplataforma de empaquetado con Electron Forge."
+
+- L2 (user, 2026-10-30) — correction, verbatim: "un cambio importante, en vez de reac, tiene que ser en vue"
+  Effect: frontend framework changes from React to **Vue 3**. Affects S11 (stack) and S12 (Fase 1 scaffold). Everything else unchanged (Electron, Vite, Electron Forge, Tailwind CSS, Node crypto, googleapis, electron-store).
+
+- L3 (dev, 2026-10-30) — crypto decision: PBKDF2 iterations set to **600,000** (spec mandates a minimum of 100,000; 600k follows current OWASP guidance for PBKDF2-SHA256 and still satisfies RNF-02). Vitest added as the unit test runner; T3 tests observed RED (missing module) → GREEN (6/6 pass).
+
+- L4 (dev, 2026-10-30) — Fase 1 + Fase 2 complete: scaffold (9b041a7), UI base (3bb5721), crypto engine (3818cd9), vault session (5851671), startup import fix (8c09012). 13/13 vitest tests green; `npm start` launches Electron successfully. Next: T5 OAuth loopback — blocked on user creating an OAuth Client ID in Google Cloud Console (RF-05 / S5).
+
+- L5 (user, 2026-10-30) — correction, verbatim: "no lo que tienes que pedirmelas la primera vez para conectarse, no que tu las tengas"
+  Effect: T5 uses **bring-your-own OAuth credentials** — the app asks the user for their own Client ID/Secret on first Drive connection instead of shipping developer credentials. S5 amended accordingly; T5 unblocked.
+
+- L6 (dev, 2026-10-31) — T6 complete (ecbcf24): vault transport to `appDataFolder` via injected Drive client. Decisions: (a) unit tests inject a mock Drive client — no network in the suite; the real `googleapis` factory is only exercised at runtime; (b) remote fileId cached in electron-store, self-heals on stale ids; (c) `googleapis` bundles cleanly into the Electron main (smoke verified); (d) npm audit shows 25 moderate advisories all in the `@electron-forge` dev toolchain — no high/critical, dev-only, no fix without breaking changes; (e) `.atl/` skill registry auto-generated by gentle-ai and committed with T6.
+
+- L7 (dev, 2026-10-31) — independent verification of T6: **FAIL → 2 blockers**, both real and fixed in one correction batch:
+  B1: the `drive:upload` IPC accepted whatever the renderer sent, and the renderer only holds plaintext — upload bytes now come from `vaultStore.readEnvelope()` (disk ciphertext) and `assertEnvelope` gates both directions before any Drive call.
+  B2: update-404 self-heal created a duplicate `passbox.vault` instead of re-resolving by name — both upload and download now re-list by name (newest-first) after a stale id, creating only when no file with that name exists.
+  Advisories fixed in the same batch: dead `getTokenData` removed; decrypt failure now clears the token and reports "reconnect Google Drive"; remote body validation (JSON + envelope shape); simplified Drive query; `createAuthClient` split out and unit-tested (44/44); lint gate red since T5 row now green; L6 hash typo corrected. Verifier scratch dirs cleaned.
+
+- L8 (dev, 2026-10-31) — T7 design decisions (auto-sync):
+  (a) The on-open cloud check runs right after unlock, not before the password prompt — the Drive refresh token is encrypted with the vault session key (T5 decision), so zero-knowledge forces check-after-unlock; closest point RF-03 allows.
+  (b) Multi-device bootstrap: a remote envelope with a different salt is adopted only via password rekey (derive from envelope salt + GCM verification, nothing stored); a foreign master password is refused and this session then blocks pushes (`lineage = 'blocked'`).
+  (c) Never clobber: every push pre-flights the remote (`download` + `updatedAt` compare); a newer remote mid-session defers to T8. Pushes require verified lineage this session.
+  (d) `vault:save` fires the upload fire-and-forget — sync failure can neither block nor undo a local save. Vault writes are atomic (tmp+rename). Last sync outcome lands in electron-store (S11 stack note).
+
+- L9 (dev, 2026-10-31) — independent verification of T7: **FAIL → 3 blockers** (irrebuildable-data class), all fixed in one correction batch (b5bf9a3) with the verifier's probes committed as regression tests:
+  B1: foreign-lineage (different-salt) remotes were adopted without a recency check — an older remote could destroy newer local-only secrets. Fix: `previewRemoteWithPassword` decrypts without persisting; adoption happens only for a strictly newer remote, otherwise the lineage blocks.
+  B2: `adoptRemote` swapped the session key before the atomic write — a failed write could leave session≠file and the next save unreadable. Fix: persist first, swap last; failure zeroes the derived key and leaves the session untouched.
+  B3: every adoption invalidated the encrypted Drive refresh token (bound to the old session key) while the UI still showed Connected. Fix: decrypt the token blob before the swap, re-encrypt after.
+  Advisories fixed: open/uploadAfterSave never reject even when electron-store is broken (A2); 15s cloud-operation timeout so unlock can never hang on a black-holed network (A1); last-sync outcome now recorded for uptodate/incompatible/remote-newer/lineage-unverified (A3).
+  Known/deferred: pre-flight download→upload TOCTOU is inherent until T8 conflict resolution (A5); UnlockScreen mislabels non-password errors — pre-existing, UI polish (A6); `getLastSync` has no renderer consumer yet (A3) — surface planned with T8.
+
+- L11 (dev, 2026-10-31) — T8 (conflict visibility) complete: the `updatedAt` last-writer-wins arbitration itself shipped inside T7 (Log L8); T8 adds the visible surface — new `drive:sync-status` IPC returns `{drive, lastSync}` and DriveSettings renders plain-language sync states: last-sync time when OK, amber notices for `remote-newer` (merges on reopen), `incompatible-vault`/`lineage-changed` (different master password), `lineage-unverified` (resumes after next open check), and a generic failed line otherwise. This closes advisory A3 (lastSync consumer). TOCTOU (A5) documented as accepted: pre-flight narrows the window, full closure would need Drive conditional updates — out of "basic" scope. UI copy English per artifact rules.
+
+- L12 (dev, 2026-10-31) — T9 packaging evidence: `npm run make` on **win32/x64** produced `Passbox-1.0.0 Setup.exe` (148.5 MB) + `passbox-1.0.0-full.nupkg` via MakerSquirrel; the packaged binary `out/Passbox-win32-x64/Passbox.exe` launches and stays running (observed, then terminated). Maker config from T1 already covers the other targets (MakerZIP for darwin, MakerDeb/MakerRpm for linux), but **their artifacts were not produced here** — macOS/Linux makers must run on their own hosts (CI or manual); recorded as pending-by-environment, not skipped. The installer itself was NOT executed (would install on this machine without consent — user's call). Risk for the task: none (verification activity only; forge config unchanged since T1).
+
+- L10 (dev, 2026-10-31) — second correction for the B3 residual (5b55bdf): after `adoptRemote` commits, a failed Drive-token re-wrap could return the stale local payload while disk held the adopted vault (next save → undecryptable). Fix: the token re-wrap moved out of the adoption try-block; once adoption commits every path returns the adopted payload, and a failed token write clears the Drive token so the reconnect flow surfaces. Verifier recheck: RESOLVED (R6/R7/R8), 74/74 tests, lint PASS (table alignment finally canonical). A test-side gotcha: a test helper building foreign envelopes with mismatched payload/envelope salts reproduced an unlock failure — production `vault-store.create` keeps both salts identical; the helper now mirrors that invariant.
