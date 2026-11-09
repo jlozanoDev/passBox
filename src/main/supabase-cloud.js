@@ -64,9 +64,8 @@ export function createSupabaseCloud({
 
   function requireConnectedSettings() {
     const projectUrl = config.getProjectUrl();
-    const serviceKeyBlob = config.getServiceKeyBlob();
     const databaseUrlBlob = config.getDatabaseUrlBlob();
-    if (!projectUrl || !serviceKeyBlob || !databaseUrlBlob) {
+    if (!projectUrl || !databaseUrlBlob) {
       throw new Error('Cloud sync is not connected');
     }
     const { databaseUrl } = vaultStore.decryptSessionData(databaseUrlBlob);
@@ -135,16 +134,16 @@ export function createSupabaseCloud({
     },
 
     /**
-     * Validate, migrate schema, persist encrypted secrets (S1/S4/S6).
-     * @param {{projectUrl: string, serviceKey: string, databaseUrl: string}} credentials
+     * Validate, migrate schema, persist encrypted connection string
+     * (S1/S4/S6, A1: no service-role key — Postgres auth is the URI).
+     * @param {{projectUrl: string, databaseUrl: string}} credentials
      * @param {{masterPassword?: string}} [options] when provided and the
      *   vault is unlocked, immediately open()/import so Connect leaves
      *   lineage verified and the cloud holds the existing passwords (B3).
      * @returns {Promise<{connected: boolean}>}
      */
-    async connect({ projectUrl, serviceKey, databaseUrl } = {}, options = {}) {
+    async connect({ projectUrl, databaseUrl } = {}, options = {}) {
       if (!projectUrl) throw new Error('Supabase project URL is required');
-      if (!serviceKey) throw new Error('Service key is required');
       if (!databaseUrl) throw new Error('Database connection URL is required');
       if (!vaultStore.status().unlocked) {
         throw new Error('Vault must be unlocked to connect cloud sync');
@@ -160,7 +159,6 @@ export function createSupabaseCloud({
       }
 
       config.setSecretBlobs({
-        serviceKeyBlob: vaultStore.encryptSessionData({ serviceKey }),
         databaseUrlBlob: vaultStore.encryptSessionData({ databaseUrl }),
       });
       lineage = 'unverified';

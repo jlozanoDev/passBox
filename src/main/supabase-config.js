@@ -1,17 +1,18 @@
 import Store from 'electron-store';
 
 /**
- * Supabase config store (spec S1): holds the user-entered project URL
- * in plain form (not secret) plus encrypted blobs for the service role
- * key and the database connection string. Secrets are encrypted with
- * the vault session key (encryptSessionData) before they reach disk —
- * the same at-rest pattern the S3 secret used.
+ * Supabase config store (spec S1, amended A1): holds the user-entered
+ * project URL in plain form (not secret) plus an encrypted blob for
+ * the database connection string. The connection string is encrypted
+ * with the vault session key (encryptSessionData) before it reaches
+ * disk. No service-role key: the app talks to Postgres directly.
  */
 
 const KEYS = {
   projectUrl: 'supabase.projectUrl',
-  serviceKeyBlob: 'supabase.serviceKeyBlob',
   databaseUrlBlob: 'supabase.databaseUrlBlob',
+  /** Legacy only — written by older builds, cleared on next connect. */
+  serviceKeyBlob: 'supabase.serviceKeyBlob',
   lastSync: 'sync.last',
 };
 
@@ -56,30 +57,23 @@ export function createSupabaseConfig(cwd) {
     },
 
     /** @returns {{iv: string, authTag: string, ciphertext: string}|null} */
-    getServiceKeyBlob() {
-      return store.get(KEYS.serviceKeyBlob) ?? null;
-    },
-
-    /** @returns {{iv: string, authTag: string, ciphertext: string}|null} */
     getDatabaseUrlBlob() {
       return store.get(KEYS.databaseUrlBlob) ?? null;
     },
 
     /**
-     * Persist both secret blobs (ciphertext only).
-     * @param {{serviceKeyBlob: object, databaseUrlBlob: object}} blobs
+     * Persist the encrypted database connection string (ciphertext only).
+     * @param {{databaseUrlBlob: object}} blobs
      */
-    setSecretBlobs({ serviceKeyBlob, databaseUrlBlob } = {}) {
-      const missing = [];
-      if (!serviceKeyBlob?.ciphertext) missing.push('serviceKeyBlob');
-      if (!databaseUrlBlob?.ciphertext) missing.push('databaseUrlBlob');
-      if (missing.length > 0) {
+    setSecretBlobs({ databaseUrlBlob } = {}) {
+      if (!databaseUrlBlob?.ciphertext) {
         throw new Error(
-          `Missing Supabase secrets: ${missing.join(', ')} are required`,
+          'Missing Supabase secrets: databaseUrlBlob is required',
         );
       }
-      store.set(KEYS.serviceKeyBlob, serviceKeyBlob);
       store.set(KEYS.databaseUrlBlob, databaseUrlBlob);
+      // Drop any legacy service-key blob from older builds (A1).
+      store.delete(KEYS.serviceKeyBlob);
     },
 
     clearSecrets() {
@@ -103,9 +97,7 @@ export function createSupabaseConfig(cwd) {
     getStatus() {
       return {
         hasCredentials: Boolean(store.get(KEYS.projectUrl)),
-        connected: Boolean(
-          store.get(KEYS.serviceKeyBlob) && store.get(KEYS.databaseUrlBlob),
-        ),
+        connected: Boolean(store.get(KEYS.databaseUrlBlob)),
       };
     },
   };

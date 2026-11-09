@@ -9,14 +9,12 @@ const key = deriveKey(master, Buffer.from(salt, 'base64'));
 
 const credentials = {
   projectUrl: 'https://abcdefgh.supabase.co',
-  serviceKey: 'eyJ-service-role',
   databaseUrl:
     'postgresql://postgres.abcdefgh:secretpw@pooler.supabase.com:6543/postgres',
 };
 
 function makeConfig() {
   let projectUrl = null;
-  let serviceKeyBlob = null;
   let databaseUrlBlob = null;
   let lastSync = null;
   return {
@@ -24,14 +22,11 @@ function makeConfig() {
     setProjectUrl: vi.fn((url) => {
       projectUrl = url;
     }),
-    getServiceKeyBlob: vi.fn(() => serviceKeyBlob),
     getDatabaseUrlBlob: vi.fn(() => databaseUrlBlob),
     setSecretBlobs: vi.fn((blobs) => {
-      serviceKeyBlob = blobs.serviceKeyBlob;
       databaseUrlBlob = blobs.databaseUrlBlob;
     }),
     clearSecrets: vi.fn(() => {
-      serviceKeyBlob = null;
       databaseUrlBlob = null;
     }),
     recordSync: vi.fn((ok, error) => {
@@ -40,7 +35,7 @@ function makeConfig() {
     getLastSync: vi.fn(() => lastSync),
     getStatus: vi.fn(() => ({
       hasCredentials: Boolean(projectUrl),
-      connected: Boolean(serviceKeyBlob && databaseUrlBlob),
+      connected: Boolean(databaseUrlBlob),
     })),
   };
 }
@@ -159,12 +154,15 @@ describe('supabase-cloud connect (S1/S4/S6)', () => {
       createSqlClient: sqlFactory.createSqlClient,
     });
     await expect(
-      cloud.connect({ projectUrl: '', serviceKey: 'k', databaseUrl: 'd' }),
+      cloud.connect({ projectUrl: '', databaseUrl: 'd' }),
     ).rejects.toThrow(/project URL/i);
+    await expect(
+      cloud.connect({ projectUrl: credentials.projectUrl, databaseUrl: '' }),
+    ).rejects.toThrow(/connection URL/i);
     expect(sqlFactory.createSqlClient).not.toHaveBeenCalled();
   });
 
-  it('runs migration then stores encrypted secrets (never plaintext)', async () => {
+  it('connects with projectUrl + databaseUrl only — no service key (A1)', async () => {
     const cloud = createSupabaseCloud({
       config,
       vaultStore,
@@ -176,16 +174,16 @@ describe('supabase-cloud connect (S1/S4/S6)', () => {
       credentials.databaseUrl,
     );
     expect(vaultStore.encryptSessionData).toHaveBeenCalledWith({
-      serviceKey: credentials.serviceKey,
-    });
-    expect(vaultStore.encryptSessionData).toHaveBeenCalledWith({
       databaseUrl: credentials.databaseUrl,
     });
+    expect(vaultStore.encryptSessionData).not.toHaveBeenCalledWith(
+      expect.objectContaining({ serviceKey: expect.anything() }),
+    );
     expect(config.setSecretBlobs).toHaveBeenCalled();
     expect(config.getStatus().connected).toBe(true);
     const blobs = config.setSecretBlobs.mock.calls[0][0];
-    expect(blobs.serviceKeyBlob.ciphertext).not.toContain('service-role');
     expect(blobs.databaseUrlBlob.ciphertext).not.toContain('secretpw');
+    expect(blobs).not.toHaveProperty('serviceKeyBlob');
   });
 
   it('does not mark connected when migration fails', async () => {
@@ -364,9 +362,6 @@ describe('supabase-cloud open/upload (S3/S5 row sync)', () => {
     const config2 = makeConfig();
     config2.setProjectUrl(credentials.projectUrl);
     config2.setSecretBlobs({
-      serviceKeyBlob: vaultStore.encryptSessionData({
-        serviceKey: credentials.serviceKey,
-      }),
       databaseUrlBlob: vaultStore.encryptSessionData({
         databaseUrl: credentials.databaseUrl,
       }),

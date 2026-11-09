@@ -10,7 +10,6 @@ const status = ref({
 });
 const lastSync = ref(null);
 const projectUrl = ref('');
-const serviceKey = ref('');
 const databaseUrl = ref('');
 const busy = ref(false);
 const message = ref('');
@@ -57,12 +56,10 @@ async function connect() {
   try {
     await window.passbox.cloudConnect({
       projectUrl: projectUrl.value.trim(),
-      serviceKey: serviceKey.value.trim(),
       databaseUrl: databaseUrl.value.trim(),
     });
-    // Secrets live encrypted at rest from here on — drop them from
-    // renderer memory immediately.
-    serviceKey.value = '';
+    // Connection string lives encrypted at rest from here on — drop it
+    // from renderer memory immediately.
     databaseUrl.value = '';
     message.value = 'Cloud sync connected. Schema is ready.';
     await refresh();
@@ -93,7 +90,7 @@ async function disconnect() {
           {{
             status.connected
               ? 'Secrets are synced as encrypted rows in Supabase.'
-              : 'Supabase project URL, service key and connection string.'
+              : 'Supabase project URL and session-pooler connection string.'
           }}
         </p>
       </div>
@@ -129,13 +126,6 @@ async function disconnect() {
         class="w-full rounded-lg border border-neutral-200 px-3 py-2 text-sm outline-none focus:border-neutral-400"
       />
       <input
-        v-model="serviceKey"
-        required
-        type="password"
-        placeholder="Service role key"
-        class="w-full rounded-lg border border-neutral-200 px-3 py-2 text-sm outline-none focus:border-neutral-400"
-      />
-      <input
         v-model="databaseUrl"
         required
         type="password"
@@ -150,8 +140,9 @@ async function disconnect() {
         {{ busy ? 'Connecting…' : 'Connect' }}
       </button>
       <p class="text-xs text-neutral-400">
-        Keys are encrypted with your vault key before storage. Secret values are
-        encrypted on this device — Supabase only ever stores ciphertext.
+        The connection string is encrypted with your vault key before storage.
+        Secret values are encrypted on this device — Supabase only ever stores
+        ciphertext.
       </p>
     </form>
 

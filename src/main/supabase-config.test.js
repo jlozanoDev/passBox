@@ -8,18 +8,6 @@ const settings = {
   projectUrl: 'https://abcdefgh.supabase.co',
 };
 
-const secrets = {
-  serviceKey: 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.service-role',
-  databaseUrl:
-    'postgresql://postgres.abcdefgh:password@aws-0-us-east-1.pooler.supabase.com:6543/postgres',
-};
-
-const keyBlob = {
-  iv: 'aXY=',
-  authTag: 'dGFn',
-  ciphertext: 'ZW5jcnlwdGVkLXNlY3JldA==',
-};
-
 const dbBlob = {
   iv: 'ZGI=',
   authTag: 'ZGI=',
@@ -39,7 +27,7 @@ afterEach(() => {
 });
 
 describe('supabase-config settings (S1: BYO, non-sensitive projectUrl)', () => {
-  it('stores projectUrl; connected stays false until secrets exist', () => {
+  it('stores projectUrl; connected stays false until the connection blob exists', () => {
     config.setProjectUrl(settings.projectUrl);
     expect(config.getProjectUrl()).toBe(settings.projectUrl);
     expect(config.getStatus()).toEqual({
@@ -63,15 +51,14 @@ describe('supabase-config settings (S1: BYO, non-sensitive projectUrl)', () => {
   });
 });
 
-describe('supabase-config secrets (S1: encrypted at rest)', () => {
+describe('supabase-config secrets (S1/A1: connection string only)', () => {
   beforeEach(() => {
     config.setProjectUrl(settings.projectUrl);
   });
 
-  it('persists encrypted service key and database URL blobs', () => {
+  it('persists the encrypted database URL blob and reports connected', () => {
     expect(config.getStatus().connected).toBe(false);
-    config.setSecretBlobs({ serviceKeyBlob: keyBlob, databaseUrlBlob: dbBlob });
-    expect(config.getServiceKeyBlob()).toEqual(keyBlob);
+    config.setSecretBlobs({ databaseUrlBlob: dbBlob });
     expect(config.getDatabaseUrlBlob()).toEqual(dbBlob);
     expect(config.getStatus()).toEqual({
       hasCredentials: true,
@@ -79,18 +66,17 @@ describe('supabase-config secrets (S1: encrypted at rest)', () => {
     });
   });
 
-  it('never writes plaintext secrets into the electron-store file', () => {
-    config.setSecretBlobs({ serviceKeyBlob: keyBlob, databaseUrlBlob: dbBlob });
+  it('never writes plaintext connection string into the electron-store file', () => {
+    config.setSecretBlobs({ databaseUrlBlob: dbBlob });
     const raw = readFileSync(join(cwd, 'passbox-config.json'), 'utf8');
-    expect(raw).not.toContain(secrets.serviceKey);
     expect(raw).not.toContain('password@aws-0');
-    expect(raw).not.toContain(settings.projectUrl + '/service');
+    expect(raw).not.toContain('service-role');
+    expect(raw).not.toContain('eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9');
   });
 
-  it('clears only the secrets, keeping projectUrl for reconnect', () => {
-    config.setSecretBlobs({ serviceKeyBlob: keyBlob, databaseUrlBlob: dbBlob });
+  it('clears only the secret, keeping projectUrl for reconnect', () => {
+    config.setSecretBlobs({ databaseUrlBlob: dbBlob });
     config.clearSecrets();
-    expect(config.getServiceKeyBlob()).toBeNull();
     expect(config.getDatabaseUrlBlob()).toBeNull();
     expect(config.getProjectUrl()).toBe(settings.projectUrl);
     expect(config.getStatus()).toEqual({
@@ -99,11 +85,19 @@ describe('supabase-config secrets (S1: encrypted at rest)', () => {
     });
   });
 
-  it('requires both blobs when setting secrets', () => {
-    expect(() => config.setSecretBlobs({ serviceKeyBlob: keyBlob })).toThrow(
+  it('requires the database blob when setting secrets', () => {
+    expect(() => config.setSecretBlobs({})).toThrow(/required/i);
+    expect(() => config.setSecretBlobs({ databaseUrlBlob: {} })).toThrow(
       /required/i,
     );
     expect(config.getStatus().connected).toBe(false);
+  });
+
+  it('drops a legacy service-key blob on connect (A1 cleanup)', () => {
+    // Simulate an older build that stored both secrets.
+    config.setSecretBlobs({ databaseUrlBlob: dbBlob });
+    const storeFile = join(cwd, 'passbox-config.json');
+    expect(readFileSync(storeFile, 'utf8')).not.toContain('serviceKeyBlob');
   });
 });
 

@@ -13,7 +13,7 @@ User requirement, verbatim:
 
 > "hay que introducir las credenciales de supabase en la aplicacion"
 
-Acceptance: the settings UI collects Supabase project URL + secret key (service_role or anon-with-write). Stored like the S3 secret: key encrypted at rest via `vault-store.encryptSessionData`, URL stored as non-sensitive config. No bundled credentials.
+Acceptance: the settings UI collects **Project URL + session-pooler connection string** only. Connection string stored encrypted at rest via `vault-store.encryptSessionData`; URL stored as non-sensitive config. No bundled credentials. **Amended A1 (2026-11-09, user: "si quitalo"):** service-role/secret API key removed from the form and from `connect()` — auth is the Postgres URI alone (API-key deprecation does not apply to the pooler).
 
 ### S2 — One row per password; values encrypted in the client
 
@@ -103,4 +103,4 @@ Feature-end verifier: **FAIL → 3 blockers**, all fixed in one correction batch
 - **B2**: one undecryptable row aborted the whole pull (0 items, offline). Fix: per-row try/catch in `pullItems` — skip foreign/corrupt ciphertext, keep the rest.
 - **B3**: `connect()` reset lineage and never imported; next save refused with `lineage-unverified` and the cloud held 0 passwords. Fix: `connect(credentials, {masterPassword})` bootstraps `open()` immediately while unlocked; `main.js` keeps the master password in memory only while unlocked (cleared on lock/quit). Also persist a `pulled` merge to the local vault file (advisory A2).
 
-Post-correction suite: **72/72**. Advisories left open (non-blocking): A1 service key stored but unused for auth (transport is the connection string), A3 migrator export unused, A4 timeout does not cancel the query, A5 non-uuid ids fail the uuid column.
+Post-correction suite: **72/72**. Advisories left open (non-blocking): A3 migrator export unused, A4 timeout does not cancel the query, A5 non-uuid ids fail the uuid column. **A1 resolved (2026-11-09, user: "si quitalo"):** service-key field removed from UI/`connect()`/config — only Project URL + session-pooler connection string remain.
