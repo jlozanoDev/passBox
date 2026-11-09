@@ -84,6 +84,25 @@ describe('vault-store', () => {
     expect(() => store.unlock('x')).toThrow();
   });
 
+  it('refuses to save a payload whose salt the session key cannot reopen', () => {
+    const payload = store.create('master-password');
+    const originalSalt = store.readEnvelope().salt;
+
+    // A renderer/cloud payload carrying a foreign salt would be written
+    // with the current session key: the file would look valid but no
+    // master password could ever derive that key again.
+    expect(() =>
+      store.save({
+        ...payload,
+        salt: Buffer.from('foreign-vault-salt').toString('base64'),
+      }),
+    ).toThrow(/salt/i);
+
+    expect(store.readEnvelope().salt).toBe(originalSalt);
+    store.lock();
+    expect(store.unlock('master-password').items).toEqual([]);
+  });
+
   it('clears the in-memory key on lock (RNF-04)', () => {
     store.create('master-password');
     store.lock();

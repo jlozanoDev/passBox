@@ -20,9 +20,16 @@ export function createVaultStore(baseDir) {
   const vaultPath = join(baseDir, VAULT_FILENAME);
   /** @type {Buffer|null} derived AES key, present only while unlocked */
   let sessionKey = null;
+  /**
+   * Salt the session key was derived from. Persisted in every envelope
+   * this store writes, so the file can always be reopened with the
+   * master password (integrity invariant, not a secret).
+   * @type {Buffer|null}
+   */
+  let sessionSalt = null;
 
   function requireUnlocked() {
-    if (!sessionKey) {
+    if (!sessionKey || !sessionSalt) {
       throw new Error('Vault is locked');
     }
   }
@@ -55,6 +62,7 @@ export function createVaultStore(baseDir) {
         items: [],
       };
       sessionKey = deriveKey(masterPassword, salt);
+      sessionSalt = salt;
       const envelope = encryptWithKey(payload, sessionKey, salt);
       writeEnvelopeAtomic(envelope);
       return payload;
@@ -76,6 +84,7 @@ export function createVaultStore(baseDir) {
         // Transfer ownership to the session: keep the derived key for
         // saves without paying PBKDF2 twice.
         sessionKey = derived;
+        sessionSalt = salt;
         return payload;
       } catch (err) {
         derived.fill(0);
@@ -91,15 +100,19 @@ export function createVaultStore(baseDir) {
      */
     save(payload) {
       requireUnlocked();
+      // The envelope salt MUST be the one the session key came from:
+      // writing a foreign salt with this key produces a file that looks
+      // valid but no master password can reopen (permanent lockout).
+      if (payload?.salt !== sessionSalt.toString('base64')) {
+        throw new Error(
+          'Vault salt mismatch — refusing to write a file the session key cannot reopen',
+        );
+      }
       const toPersist = {
         ...payload,
         updatedAt: new Date().toISOString(),
       };
-      const envelope = encryptWithKey(
-        toPersist,
-        sessionKey,
-        Buffer.from(toPersist.salt, 'base64'),
-      );
+      const envelope = encryptWithKey(toPersist, sessionKey, sessionSalt);
       writeEnvelopeAtomic(envelope);
       return toPersist;
     },
@@ -123,6 +136,7 @@ export function createVaultStore(baseDir) {
         sessionKey.fill(0);
         sessionKey = null;
       }
+      sessionSalt = null;
     },
 
     /**
@@ -223,6 +237,7 @@ export function createVaultStore(baseDir) {
         sessionKey.fill(0);
       }
       sessionKey = derived;
+      sessionSalt = Buffer.from(envelope.salt, 'base64');
       return payload;
     },
   };
