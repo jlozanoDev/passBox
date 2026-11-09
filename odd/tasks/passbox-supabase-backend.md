@@ -90,3 +90,7 @@ Answered: yes with shared master password + shared salt; different master passwo
 ### L3 — Architecture notes (2026-11-09)
 
 Transport contract today (`sync.js` → `s3-files.js`): `download()`/`upload(envelope)` for one object. New contract: row CRUD (`list`, `upsert`, `delete`) keyed by secret id; envelope shape gate stays per secret value. Session-secret rewrap (`adoptIfNewer`, `getTokenBlob`) keeps the same surface but carries the Supabase secret key instead of the S3 secret. Key derivation: master password + shared salt → data key; salt is non-sensitive and shared so two clients agree. Rekey on master-password change re-encrypts all rows.
+
+### L4 — Delivery evidence (2026-11-09)
+
+Work units: a43353a (T1 config+migrator, RED→GREEN 14) · 85689bc (T2 row-crypto, RED→GREEN 10) · 0e8e25d (T3 store, RED→GREEN 10) · 23471ad (T4 rewire, RED→GREEN 12 cloud tests, S3 removed −2080 lines) · 498ff06/23cad5f (lint cleanups) · f636904 (doc close). T5: suite 67/67, `npm run package` OK (Electron bundles with `postgres`), oxlint clean on new/changed src files. Pre-existing `oxfmt --check` redness on `odd/tasks/*.md` and older renderer files remains (baseline debt, not this feature). Native assess d246216..HEAD: risk=medium (configuration_change), review_due=false (under_budget). Risk line: item 2 (secret-at-rest: Supabase service key + database connection URL) and item 5 (dependency swap: −`@aws-sdk/client-s3`, +`postgres`) → one independent verifier at feature end.
