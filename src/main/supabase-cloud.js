@@ -163,6 +163,13 @@ export function createSupabaseCloud({
         await sql.unsafe(MIGRATION_SQL);
       } catch (err) {
         const message = String(err?.message ?? err);
+        // Supavisor: host + username do not map to a project (typed host,
+        // wrong cluster index/region, or username without the project ref).
+        if (/tenant\/user|tenant or user not found/i.test(message)) {
+          throw new Error(
+            'The session pooler rejected the host/username pair. In Supabase Dashboard → Connect → Session pooler, copy the ENTIRE connection string (do not compose the host) and replace only the password.',
+          );
+        }
         // Direct host (db.<ref>.supabase.co) is IPv6-only without the
         // paid add-on — the usual ENOTFOUND on IPv4 networks.
         if (/ENOTFOUND|EAI_AGAIN/i.test(message)) {
