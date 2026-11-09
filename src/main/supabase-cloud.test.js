@@ -300,7 +300,7 @@ describe('supabase-cloud open/upload (S3/S5 row sync)', () => {
   });
 
   it('never blocks unlock when the network fails (local-first)', async () => {
-    const c = await connectedCloud();
+    await connectedCloud();
     sqlFactory.createSqlClient = vi.fn(() => {
       const sql = vi.fn(() => Promise.reject(new Error('network down')));
       sql.unsafe = vi.fn(() => Promise.reject(new Error('network down')));
