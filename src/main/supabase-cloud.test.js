@@ -162,6 +162,22 @@ describe('supabase-cloud connect (S1/S4/S6)', () => {
     expect(sqlFactory.createSqlClient).not.toHaveBeenCalled();
   });
 
+  it('rejects an API key pasted as the connection string (A1 UX)', async () => {
+    const cloud = createSupabaseCloud({
+      config,
+      vaultStore,
+      createSqlClient: sqlFactory.createSqlClient,
+    });
+    await expect(
+      cloud.connect({
+        projectUrl: credentials.projectUrl,
+        databaseUrl: '_publishable_n014xdiYJ8-BJ_BClf0Krg_Tj6fo4CG',
+      }),
+    ).rejects.toThrow(/postgresql:\/\//i);
+    expect(sqlFactory.createSqlClient).not.toHaveBeenCalled();
+    expect(config.setSecretBlobs).not.toHaveBeenCalled();
+  });
+
   it('connects with projectUrl + databaseUrl only — no service key (A1)', async () => {
     const cloud = createSupabaseCloud({
       config,

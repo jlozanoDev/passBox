@@ -145,13 +145,20 @@ export function createSupabaseCloud({
     async connect({ projectUrl, databaseUrl } = {}, options = {}) {
       if (!projectUrl) throw new Error('Supabase project URL is required');
       if (!databaseUrl) throw new Error('Database connection URL is required');
+      // Friendly gate: API keys (sb_publishable_… / sb_secret_… / eyJ…)
+      // are not URIs — postgres.js would try to resolve them as a host.
+      if (!/^postgres(ql)?:\/\//i.test(databaseUrl.trim())) {
+        throw new Error(
+          'Connection string must start with postgresql:// — paste the Session pooler URI from Settings → Database, not an API key',
+        );
+      }
       if (!vaultStore.status().unlocked) {
         throw new Error('Vault must be unlocked to connect cloud sync');
       }
 
       config.setProjectUrl(projectUrl);
 
-      const sql = createClient(databaseUrl);
+      const sql = createClient(databaseUrl.trim());
       try {
         await sql.unsafe(MIGRATION_SQL);
       } finally {
