@@ -353,11 +353,6 @@ describe('supabase-cloud open/upload (S3/S5 row sync)', () => {
   it('two clients with same master password share the salt (S3)', async () => {
     const c = await connectedCloud();
     await c.open(localPayload, master);
-    const c2 = createSupabaseCloud({
-      config: makeConfig(),
-      vaultStore: makeVaultStore(),
-      createSqlClient: sqlFactory.createSqlClient,
-    });
     // second client: same encrypted secrets blobs pattern
     const config2 = makeConfig();
     config2.setProjectUrl(credentials.projectUrl);
@@ -382,6 +377,5 @@ describe('supabase-cloud open/upload (S3/S5 row sync)', () => {
       true,
     );
     void c;
-    void c2;
   });
 });
