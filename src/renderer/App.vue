@@ -15,6 +15,7 @@ import ToastHost from './components/ui/ToastHost.vue';
 import ConfirmDialog from './components/ui/ConfirmDialog.vue';
 import { CATEGORY_LABELS } from './lib/icons.js';
 import { copyText } from './lib/clipboard.js';
+import { toPlain } from './lib/ipc-payload.js';
 import { useToast } from './composables/useToast.js';
 
 const views = [
@@ -184,7 +185,8 @@ function onAuthenticated(payload) {
 }
 
 async function persist(payload) {
-  const saved = await window.passbox.vaultSave(payload);
+  // Reactive proxies cannot cross the IPC boundary (structured clone).
+  const saved = await window.passbox.vaultSave(toPlain(payload));
   vault.value = saved;
   return saved;
 }
@@ -230,8 +232,9 @@ async function saveItem(data) {
     toast(isEditing ? 'Credencial actualizada' : 'Credencial guardada', {
       tone: 'success',
     });
-  } catch {
-    toast('No se pudo guardar la bóveda', { tone: 'error' });
+  } catch (err) {
+    const reason = err?.message ?? String(err);
+    toast(`No se pudo guardar la bóveda · ${reason}`, { tone: 'error' });
   }
 }
 
