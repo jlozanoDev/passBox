@@ -1,7 +1,7 @@
 {
   "name": "passbox",
   "productName": "Passbox",
-  "version": "1.0.1",
+  "version": "1.1.0",
   "private": true,
   "description": "Local-first zero-knowledge secret manager with Supabase sync",
   "keywords": [],

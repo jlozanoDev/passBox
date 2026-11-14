@@ -15,6 +15,7 @@ import ToastHost from './components/ui/ToastHost.vue';
 import ConfirmDialog from './components/ui/ConfirmDialog.vue';
 import { CATEGORY_LABELS } from './lib/icons.js';
 import { copyText } from './lib/clipboard.js';
+import { startIdleLock } from './lib/idle-lock.js';
 import { toPlain } from './lib/ipc-payload.js';
 import { useToast } from './composables/useToast.js';
 
@@ -56,6 +57,7 @@ const { toast } = useToast();
 const ready = ref(false);
 const unlocked = ref(false);
 const unlockMode = ref('unlock'); // 'create' | 'unlock'
+let stopIdleLock = () => {};
 
 /** @type {import('vue').Ref<object|null>} decrypted vault payload (S10 schema) */
 const vault = ref(null);
@@ -151,6 +153,7 @@ onMounted(async () => {
 
 onUnmounted(() => {
   window.removeEventListener('keydown', onGlobalKeydown);
+  stopIdleLock();
 });
 
 function onGlobalKeydown(event) {
@@ -178,6 +181,9 @@ function onGlobalKeydown(event) {
 function onAuthenticated(payload) {
   vault.value = payload;
   unlocked.value = true;
+  stopIdleLock = startIdleLock(() => {
+    void lock();
+  });
   activeView.value = 'vault';
   selectedId.value = null;
   searchQuery.value = '';
@@ -302,6 +308,8 @@ function openFromSecurity(id) {
 }
 
 async function lock() {
+  stopIdleLock();
+  stopIdleLock = () => {};
   await window.passbox.vaultLock();
   vault.value = null;
   unlocked.value = false;

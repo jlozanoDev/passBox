@@ -147,6 +147,20 @@ describe('S10 — secret safety', () => {
   });
 });
 
+describe('S10 — automatic idle lock', () => {
+  it('starts the idle lock after authentication and stops it on lock and unmount', () => {
+    const app = src('App.vue');
+    expect(app).toContain(
+      "import { startIdleLock } from './lib/idle-lock.js';",
+    );
+    expect(app).toMatch(
+      /function onAuthenticated\(payload\)[\s\S]*?startIdleLock/,
+    );
+    expect(app).toMatch(/async function lock\(\)[\s\S]*?stopIdleLock/);
+    expect(app).toMatch(/onUnmounted\(\(\) => \{[\s\S]*?stopIdleLock\(\)/);
+  });
+});
+
 describe('S1 — responsive navigation', () => {
   it('collapses the sidebar to an icon rail below 1024px', () => {
     const sidebar = src('components/SidebarNav.vue');

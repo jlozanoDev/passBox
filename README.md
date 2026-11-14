@@ -2,6 +2,10 @@
 
 Gestor de secretos local y de conocimiento cero para Windows, macOS y Linux. Almacena contraseñas, tokens de API y secretos de desarrollo en una bóveda local cifrada con AES-256-GCM y los sincroniza como **filas cifradas en el cliente** en tu propia base de datos Supabase Postgres. Se conecta con tu **URL de proyecto + cadena de conexión del session pooler** (ambas siguen siendo tuyas: BYO); la cadena de conexión se guarda cifrada en reposo y los valores secretos nunca salen del dispositivo en texto plano. Dos dispositivos con la misma contraseña maestra comparten una sal y pueden leer las filas del otro.
 
+## Descarga
+
+Descarga el instalador para Windows desde la [página de versiones de Passbox](https://github.com/jlozanoDev/passBox/releases) (`Setup.exe`).
+
 ## Características
 
 - **Bóveda** — búsqueda por título/usuario/categoría, chips de filtro por categoría, favoritas, panel de detalle con el secreto enmascarado, acciones de copia con confirmación visual, edición en línea y eliminación tras un diálogo que nombra la credencial.
